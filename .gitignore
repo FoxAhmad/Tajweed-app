@@ -1,0 +1,50 @@
+# Node.js
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.sqlite3
+*.egg-info/
+.venv/
+env/
+venv/
+
+# Logs
+*.log
+logs/
+server/server.log
+
+# Environment files
+.env
+server/.env
+.env.local
+.env.*.local
+
+# Build output
+build/
+dist/
+
+# React
+*.tgz
+.cache/
+public/static/
+coverage/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDEs/editors
+.vscode/
+.idea/
+*.swp
+
+# Uploads or temp files
+server/uploads/

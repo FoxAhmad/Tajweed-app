@@ -1,0 +1,13 @@
+flask==2.3.3
+flask-cors==4.0.0
+torch==2.1.0
+transformers==4.36.2
+numpy==1.24.3
+# Audio processing libraries - try installing these in order until one works
+soundfile==0.12.1
+librosa==0.10.1
+# If you have trouble with soundfile, try these dependencies
+cffi>=1.0
+# If you're on Windows, you might need these for soundfile
+# pip install pipwin
+# pipwin install pysoundfile
