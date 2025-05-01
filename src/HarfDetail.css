@@ -1,0 +1,30 @@
+.harf-detail {
+    padding: 20px;
+    text-align: center;
+  }
+  
+  .harf-box {
+    font-size: 40px;
+    font-weight: bold;
+    margin-bottom: 10px;
+  }
+  
+  .audio-box {
+    margin: 15px 0;
+  }
+  
+  .practice-btn {
+    background-color: #4CAF50;
+    color: white;
+    padding: 10px 25px;
+    font-size: 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: 0.3s ease;
+  }
+  
+  .practice-btn:hover {
+    background-color: #45a049;
+  }
+  
