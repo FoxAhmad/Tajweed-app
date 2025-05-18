@@ -1,27 +1,40 @@
-
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Flask, request, jsonify 
+from flask_cors import CORS 
 import os
 import torch
 import numpy as np
 import tempfile
 import logging
 import time
-from datetime import datetime
+from datetime import datetime 
 import wave
 import io
 import struct
-from transformers import AutoProcessor, AutoModelForAudioClassification, WhisperProcessor, WhisperModel
+from transformers import AutoProcessor, AutoModelForAudioClassification, WhisperProcessor, WhisperModel 
+# File: app.py (Add these endpoints to your Flask backend)
+# Add these imports at the top of your file
+# File: app.py (Add this new endpoint to your Flask backend)
+# Add these imports if not already present
+
+from werkzeug.utils import secure_filename
+
+# Create an input directory for storing uploaded audio files
+INPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'input')
+os.makedirs(INPUT_DIR, exist_ok=True)
+
+from segment_audio import run_segmentation_pipeline
+
+# Add these new endpoints to your Flask application
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("server.log"),
-        logging.StreamHandler()
-    ]
-)
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+#     handlers=[
+#         logging.FileHandler("server.log"),
+#         logging.StreamHandler()
+#     ]
+# )
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -34,7 +47,25 @@ processors = {}
 # Configuration constants
 MAX_AUDIO_LENGTH = 10  # seconds
 SUPPORTED_AUDIO_FORMATS = ['.wav', '.mp3', '.ogg', '.webm']
-SUPPORTED_PHONEMES = ['ee', 'so', 'si']  # Add all your supported phonemes here
+
+# Define the mapping between phonemes and models
+PHONEME_MODEL_MAPPING = {
+    'ee': {
+        'whisper': 'ahmad1703/whisper_ee', 
+        'wave2vec': 'xxmoeedxx/wav2vec2_ee'
+    },
+    'so': {
+        'whisper': 'ahmad1703/whisper_so',
+        'wave2vec': 'xxmoeedxx/wav2vec2_so'
+    },
+    'si': {
+        'whisper': 'ahmad1703/whisper_si',
+        'wave2vec': 'xxmoeedxx/wav2vec2_si'
+    }
+}
+
+# Update the SUPPORTED_PHONEMES constant
+SUPPORTED_PHONEMES = list(PHONEME_MODEL_MAPPING.keys())
 
 # WhisperClassifier class definition
 class WhisperClassifier(torch.nn.Module):
@@ -51,101 +82,152 @@ class WhisperClassifier(torch.nn.Module):
         return self.sigmoid(logits).squeeze(1)
 
 
-def load_model(model_name):
+def load_model(model_name, model_id=None, max_retries=2):
     """
-    Load a model and its processor based on the model name.
+    Load model and processor based on model name and ID.
+    """
+    # Define default model IDs if none provided
+    default_model_ids = {
+        "wave2vec": "xxmoeedxx/wav2vec2_si",
+        "whisper": "ahmad1703/whisper_ee"
+    }
     
-    Args:
-        model_name (str): Name of the model to load
-        
-    Returns:
-        tuple: (model, processor) or None if model not found
-    """
-    if model_name == "wave2vec":
-        # Initialize model and processor only once
-        if "wave2vec" not in models:
-            try:
-                logger.info("Loading Wave2Vec model...")
-                model_id = "xxmoeedxx/wav2vec2_si"
+    # Use model_id if provided, otherwise use default
+    actual_model_id = model_id if model_id else default_model_ids.get(model_name)
+    cache_key = f"{model_name}_{actual_model_id}"
+    
+    # Check if model is already loaded
+    if cache_key in models and models[cache_key] is not None:
+        logger.info(f"Using cached model: {cache_key}")
+        return models[cache_key], processors[cache_key]
+    
+    # Initialize placeholders in the cache to prevent concurrent loading attempts
+    models[cache_key] = None
+    processors[cache_key] = None
+    
+    # Retry logic
+    for attempt in range(max_retries + 1):
+        try:
+            if model_name == "wave2vec":
+                logger.info(f"Loading Wave2Vec model (attempt {attempt+1}/{max_retries+1}): {actual_model_id}")
                 
                 # Load processor
-                processors["wave2vec"] = AutoProcessor.from_pretrained(model_id)
+                processors[cache_key] = AutoProcessor.from_pretrained(
+                    actual_model_id,
+                    use_auth_token=os.environ.get("HF_TOKEN"),  # Add auth token if needed
+                    cache_dir=os.environ.get("MODEL_CACHE_DIR")  # Optional cache directory
+                )
                 
                 # Load model
-                models["wave2vec"] = AutoModelForAudioClassification.from_pretrained(model_id)
+                models[cache_key] = AutoModelForAudioClassification.from_pretrained(
+                    actual_model_id,
+                    use_auth_token=os.environ.get("HF_TOKEN"),
+                    cache_dir=os.environ.get("MODEL_CACHE_DIR")
+                )
                 
                 # Move model to GPU if available
                 if torch.cuda.is_available():
-                    models["wave2vec"] = models["wave2vec"].to("cuda")
-                    logger.info("Wave2Vec model moved to GPU")
+                    models[cache_key] = models[cache_key].to("cuda")
+                    logger.info(f"Wave2Vec model {actual_model_id} moved to GPU")
                 
-                logger.info("Wave2Vec model loaded successfully")
-            except Exception as e:
-                logger.error(f"Error loading Wave2Vec model: {e}")
-                return None, None
+                # Set model to evaluation mode
+                models[cache_key].eval()
+                logger.info(f"Wave2Vec model {actual_model_id} loaded successfully")
                 
-        return models["wave2vec"], processors["wave2vec"]
-    
-    elif model_name == "whisper":
-        # Load the Whisper-based model
-        if "whisper" not in models:
-            try:
-                logger.info("Loading Whisper classifier model...")
-                model_id = "ahmad1703/whisper_ee"
+                # Return successfully loaded model and processor
+                return models[cache_key], processors[cache_key]
+                
+            elif model_name == "whisper":
+                logger.info(f"Loading Whisper classifier model (attempt {attempt+1}/{max_retries+1}): {actual_model_id}")
                 
                 # Load processor
-                processors["whisper"] = WhisperProcessor.from_pretrained(model_id)
+                processors[cache_key] = WhisperProcessor.from_pretrained(
+                    actual_model_id,
+                    use_auth_token=os.environ.get("HF_TOKEN"),
+                    cache_dir=os.environ.get("MODEL_CACHE_DIR")
+                )
                 
                 # Load model
-                models["whisper"] = WhisperClassifier()
+                models[cache_key] = WhisperClassifier()
                 
                 # Load weights
                 try:
                     # First try to load from Hugging Face
-                    models["whisper"].load_state_dict(torch.hub.load_state_dict_from_url(
-                        f"https://huggingface.co/{model_id}/resolve/main/pytorch_model.bin",
-                        map_location=torch.device('cpu')
+                    hf_url = f"https://huggingface.co/{actual_model_id}/resolve/main/pytorch_model.bin"
+                    logger.info(f"Attempting to download model weights from: {hf_url}")
+                    
+                    models[cache_key].load_state_dict(torch.hub.load_state_dict_from_url(
+                        hf_url,
+                        map_location=torch.device('cpu'),
+                        progress=True
                     ))
-                    logger.info("Loaded Whisper model weights from Hugging Face")
+                    logger.info(f"Loaded Whisper model weights from Hugging Face: {actual_model_id}")
+                    
                 except Exception as e:
                     logger.warning(f"Could not load from HF directly: {e}")
                     # Fallback to local path if available
-                    local_path = os.environ.get("WHISPER_MODEL_PATH", "models/whis_ee.pth")
-                    if os.path.exists(local_path):
-                        models["whisper"].load_state_dict(torch.load(local_path, map_location=torch.device('cpu')))
-                        logger.info(f"Loaded Whisper model weights from local path: {local_path}")
-                    else:
-                        logger.error(f"Could not find local model at {local_path}")
+                    model_filename = actual_model_id.split('/')[-1]
+                    local_paths = [
+                        os.environ.get(f"WHISPER_MODEL_PATH_{actual_model_id.replace('/', '_')}", ""),
+                        os.path.join("models", f"{model_filename}.pth"),
+                        os.path.join("models", f"whis_{model_filename.split('_')[-1]}.pth")
+                    ]
+                    
+                    loaded = False
+                    for local_path in local_paths:
+                        if local_path and os.path.exists(local_path):
+                            models[cache_key].load_state_dict(torch.load(local_path, map_location=torch.device('cpu')))
+                            logger.info(f"Loaded Whisper model weights from local path: {local_path}")
+                            loaded = True
+                            break
+                    
+                    if not loaded:
+                        available_paths = ', '.join([p for p in local_paths if p])
+                        logger.error(f"Could not find local model at {available_paths}")
+                        # Clear cache entries on failure
+                        models.pop(cache_key, None)
+                        processors.pop(cache_key, None)
                         return None, None
                 
                 # Move model to GPU if available
                 if torch.cuda.is_available():
-                    models["whisper"] = models["whisper"].to("cuda")
-                    logger.info("Whisper model moved to GPU")
+                    models[cache_key] = models[cache_key].to("cuda")
+                    logger.info(f"Whisper model {actual_model_id} moved to GPU")
                 
                 # Set model to evaluation mode
-                models["whisper"].eval()
-                logger.info("Whisper model loaded successfully")
-            except Exception as e:
-                logger.error(f"Error loading Whisper model: {e}")
+                models[cache_key].eval()
+                logger.info(f"Whisper model {actual_model_id} loaded successfully")
+                
+                # Return successfully loaded model and processor
+                return models[cache_key], processors[cache_key]
+            
+            else:
+                logger.error(f"Unknown model type: {model_name}")
+                # Clear cache entries on failure
+                models.pop(cache_key, None)
+                processors.pop(cache_key, None)
                 return None, None
                 
-        return models["whisper"], processors["whisper"]
-    
-    else:
-        logger.error(f"Unknown model: {model_name}")
-        return None, None
+        except Exception as e:
+            logger.error(f"Error loading {model_name} model (attempt {attempt+1}/{max_retries+1}): {e}")
+            
+            # Last attempt failed
+            if attempt == max_retries:
+                logger.error(f"Failed to load {model_name} model after {max_retries+1} attempts")
+                # Clear cache entries on ultimate failure
+                models.pop(cache_key, None)
+                processors.pop(cache_key, None)
+                return None, None
+            
+            # Wait before retrying with exponential backoff
+            wait_time = 2 ** attempt  # 1, 2, 4, 8, ... seconds
+            logger.info(f"Waiting {wait_time} seconds before retrying...")
+            time.sleep(wait_time)
 
 
 def read_audio_from_file(file_or_bytes):
     """
-    Read audio data from file or binary data
-    
-    Args:
-        file_or_bytes: File-like object or bytes
-        
-    Returns:
-        tuple: (audio_data, sample_rate)
+    Read audio data from a file or bytes object.
     """
     # Get bytes from file object if needed
     if hasattr(file_or_bytes, 'read'):
@@ -265,15 +347,7 @@ def read_audio_from_file(file_or_bytes):
 
 def resample_audio(audio_data, orig_sample_rate, target_sample_rate=16000):
     """
-    Resample audio data to target sample rate
-    
-    Args:
-        audio_data (numpy.ndarray): Audio data
-        orig_sample_rate (int): Original sample rate
-        target_sample_rate (int): Target sample rate
-        
-    Returns:
-        numpy.ndarray: Resampled audio data
+    Resample audio to target sample rate.
     """
     if orig_sample_rate == target_sample_rate:
         return audio_data
@@ -300,14 +374,7 @@ def resample_audio(audio_data, orig_sample_rate, target_sample_rate=16000):
 
 def preprocess_audio(audio_data, sample_rate):
     """
-    Preprocess audio data for model input
-    
-    Args:
-        audio_data (numpy.ndarray): Audio data
-        sample_rate (int): Sample rate
-        
-    Returns:
-        numpy.ndarray: Preprocessed audio data
+    Preprocess audio data for model input.
     """
     # Make sure data is float32
     audio_data = audio_data.astype(np.float32)
@@ -334,22 +401,11 @@ def preprocess_audio(audio_data, sample_rate):
 
 def predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme=None):
     """
-    Predicts whether the given audio is pronounced correctly or not.
-    
-    Args:
-        model: The trained model
-        processor: Feature processor
-        audio_data (numpy.ndarray): Audio data
-        sample_rate (int): Sample rate
-        model_name (str): Name of the model being used
-        phoneme (str, optional): The phoneme being checked
-        
-    Returns:
-        dict: Prediction results
+    Process audio and make a prediction.
     """
     try:
         start_time = time.time()
-        print(phoneme)
+        logger.info(f"Processing audio with phoneme: {phoneme}")
         # Check audio length
         audio_length = len(audio_data) / sample_rate
         logger.info(f"Audio length: {audio_length:.2f} seconds")
@@ -483,15 +539,7 @@ def predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme
 
 def get_detailed_feedback(phoneme, prediction, confidence):
     """
-    Generate detailed feedback based on phoneme, prediction and confidence
-    
-    Args:
-        phoneme (str): The phoneme being checked
-        prediction (int): The model prediction (0=incorrect, 1=correct)
-        confidence (float): Confidence score (0-100)
-        
-    Returns:
-        str: Detailed feedback
+    Generate detailed feedback based on prediction and confidence.
     """
     phoneme_display = phoneme if phoneme else "this sound"
     
@@ -513,13 +561,7 @@ def get_detailed_feedback(phoneme, prediction, confidence):
 
 def validate_request(request):
     """
-    Validate the incoming request
-    
-    Args:
-        request: Flask request object
-        
-    Returns:
-        tuple: (is_valid, error_message)
+    Validate the incoming request.
     """
     # Check if audio file is present
     if 'audio' not in request.files:
@@ -548,22 +590,24 @@ def validate_request(request):
     if phoneme and phoneme not in SUPPORTED_PHONEMES:
         return False, f"Unsupported phoneme: {phoneme}. Please use one of: {', '.join(SUPPORTED_PHONEMES)}"
     
+    # Validate model_id if provided (simple validation for format)
+    model_id = request.form.get('model_id', '')
+    if model_id and not (
+        '/' in model_id and  # Must contain a slash for username/model_name format
+        len(model_id.split('/')) == 2 and  # Must have exactly one slash
+        all(part for part in model_id.split('/'))  # Both parts must be non-empty
+    ):
+        return False, f"Invalid model_id format: {model_id}. Expected format: 'username/model_name'"
+    
     return True, ""
 
 
 @app.route('/analyze-tajweed', methods=['POST'])
 def analyze_tajweed():
     """
-    Endpoint to analyze audio for tajweed pronunciation.
-    
-    Expects:
-        - 'audio' file in request.files
-        - 'model' parameter in request.form ('whisper' or 'wave2vec')
-        - 'phoneme' parameter in request.form (selected phoneme)
-        
-    Returns:
-        JSON response with analysis results
+    Main endpoint for analyzing tajweed pronunciation.
     """
+    print("analyzing")
     try:
         # Log request
         request_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(4).hex()}"
@@ -579,8 +623,9 @@ def analyze_tajweed():
         audio_file = request.files['audio']
         model_name = request.form.get('model', 'wave2vec')
         phoneme = request.form.get('phoneme', '')
+        model_id = request.form.get('model_id', '')
         
-        logger.info(f"Request {request_id}: Processing audio with {model_name} model, phoneme: '{phoneme}'")
+        logger.info(f"Request {request_id}: Processing audio with {model_name} model, phoneme: '{phoneme}', model_id: '{model_id}'")
         logger.info(f"Audio file: {audio_file.filename if audio_file.filename else 'No filename'}, "
                    f"Content type: {audio_file.content_type}")
         
@@ -592,9 +637,9 @@ def analyze_tajweed():
             return jsonify({"error": f"Failed to read audio data: {str(e)}"}), 400
         
         # Load appropriate model
-        model, processor = load_model(model_name)
+        model, processor = load_model(model_name, model_id)
         if model is None or processor is None:
-            logger.error(f"Request {request_id}: Failed to load {model_name} model")
+            logger.error(f"Request {request_id}: Failed to load {model_name} model (ID: {model_id})")
             return jsonify({"error": f"Failed to load {model_name} model"}), 500
         
         # Predict pronunciation
@@ -605,6 +650,7 @@ def analyze_tajweed():
         if phoneme:
             result["phoneme"] = phoneme
         result["timestamp"] = datetime.now().isoformat()
+        result["model_id"] = model_id if model_id else f"default_{model_name}"
         
         # Log result summary
         if "error" in result:
@@ -613,9 +659,9 @@ def analyze_tajweed():
             logger.info(f"Request {request_id}: Analysis complete - "
                       f"Pronunciation {'correct' if result.get('correct', False) else 'incorrect'} "
                       f"with {result.get('confidence', 0):.2f}% confidence")
-        
+
         return jsonify(result)
-        
+
     except Exception as e:
         logger.exception("Unhandled error in analyze_tajweed endpoint")
         return jsonify({"error": str(e)}), 500
@@ -638,91 +684,319 @@ def list_models():
     """
     List available models and their status
     """
+    # Check which models are already loaded
+    loaded_models = {}
+    for key in models:
+        if '_' in key:
+            model_type, model_id = key.split('_', 1)
+            if model_type not in loaded_models:
+                loaded_models[model_type] = []
+            loaded_models[model_type].append(model_id)
+
     return jsonify({
         "available_models": {
-            "wave2vec": "wave2vec" in models,
-            "whisper": "whisper" in models
+            "wave2vec": "wave2vec" in loaded_models,
+            "whisper": "whisper" in loaded_models
         },
-        "supported_phonemes": SUPPORTED_PHONEMES
+        "supported_phonemes": SUPPORTED_PHONEMES,
+        "phoneme_model_mapping": PHONEME_MODEL_MAPPING,
+        "loaded_models": loaded_models
     })
 
 
-# Add a test endpoint to verify audio processing
-@app.route('/test-audio', methods=['POST'])
-def test_audio():
+@app.route('/status', methods=['GET'])
+def model_status():
     """
-    Test endpoint to verify audio processing is working
+    Endpoint to check the loading status of all models
+    """
+    # print("im here")
+    # Calculate loading progress
+    total_models = 0
+    loaded_models = 0
+    model_status = {}
+
+    for phoneme, model_types in PHONEME_MODEL_MAPPING.items():
+        for model_type, model_id in model_types.items():
+            total_models += 1
+            cache_key = f"{model_type}_{model_id}"
+
+            is_loaded = cache_key in models and models[cache_key] is not None
+            model_status[cache_key] = {
+                "loaded": is_loaded,
+                "phoneme": phoneme,
+                "model_type": model_type,
+                "model_id": model_id
+            }
+
+            if is_loaded:
+                loaded_models += 1
+
+    # Calculate loading percentage
+    loading_percentage = (loaded_models / total_models * 100) if total_models > 0 else 0
+
+    # Get GPU usage if available
+    gpu_info = {}
+    if torch.cuda.is_available():
+        try:
+            gpu_info = {
+                "device_count": torch.cuda.device_count(),
+                "current_device": torch.cuda.current_device(),
+                "device_name": torch.cuda.get_device_name(0),
+                "memory_allocated": f"{torch.cuda.memory_allocated(0) / 1024**3:.2f} GB",
+                "memory_reserved": f"{torch.cuda.memory_reserved(0) / 1024**3:.2f} GB",
+            }
+        except Exception as e:
+            logger.error(f"Error getting GPU info: {e}")
+            gpu_info = {"error": str(e)}
+
+    return jsonify({
+        "status": "loading" if loading_percentage < 100 else "ready",
+        "loading_progress": {
+            "total_models": total_models,
+            "loaded_models": loaded_models,
+            "percentage": round(loading_percentage, 1)
+        },
+        "model_status": model_status,
+        "gpu_info": gpu_info,
+        "server_time": datetime.now().isoformat()
+    })
+def preload_all_models():
+    """
+    Preload all models when the server starts
+    """
+    logger.info("Preloading all models...")
+
+    # Preload all models based on PHONEME_MODEL_MAPPING
+    for phoneme, model_types in PHONEME_MODEL_MAPPING.items():
+        for model_type, model_id in model_types.items():
+            try:
+                logger.info(f"Preloading {model_type} model for phoneme '{phoneme}': {model_id}")
+                model, processor = load_model(model_type, model_id)
+                if model and processor:
+                    logger.info(f"Successfully preloaded {model_type} model for phoneme '{phoneme}'")
+                else:
+                    logger.error(f"Failed to preload {model_type} model for phoneme '{phoneme}'")
+            except Exception as e:
+                logger.exception(f"Error preloading {model_type} model for phoneme '{phoneme}': {e}")
+
+
+@app.route('/segment-audio', methods=['POST'])
+def segment_audio():
+    """
+    Endpoint to segment an audio file using the Docker pipeline
     """
     try:
+        # Log request
+        request_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(4).hex()}"
+        logger.info(f"Request {request_id}: Received segment-audio request")
+        
+        # Check if audio file is present
         if 'audio' not in request.files:
+            logger.warning(f"Request {request_id}: No audio file provided")
             return jsonify({"error": "No audio file provided"}), 400
-            
+        
+        # Get audio file
         audio_file = request.files['audio']
         
-        # Read audio data
+        # Check if letter is specified
+        letter = request.form.get('letter', '')
+        if not letter:
+            logger.warning(f"Request {request_id}: No letter specified")
+            return jsonify({"error": "Please specify a letter name"}), 400
+        
+        # Save audio file to temporary location
+        temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+        temp_file_path = temp_file.name
+        temp_file.close()
+        
         try:
-            audio_data, sample_rate = read_audio_from_file(audio_file)
+            audio_file.save(temp_file_path)
+            logger.info(f"Request {request_id}: Saved audio file to {temp_file_path}")
             
-            # Return basic audio info
-            return jsonify({
-                "status": "success",
-                "sample_rate": sample_rate,
-                "duration": len(audio_data) / sample_rate,
-                "num_samples": len(audio_data),
-                "min_value": float(np.min(audio_data)),
-                "max_value": float(np.max(audio_data)),
-                "is_normalized": abs(np.max(np.abs(audio_data)) - 1.0) < 0.01
-            })
+            # Run segmentation pipeline
+            result = run_segmentation_pipeline(temp_file_path, letter)
             
-        except Exception as e:
-            logger.exception("Error processing audio in test endpoint")
-            return jsonify({"error": str(e)}), 400
+            if not result["success"]:
+                logger.error(f"Request {request_id}: Segmentation failed - {result.get('error', 'Unknown error')}")
+                return jsonify({"error": result.get('error', 'Segmentation failed')}), 500
             
+            # Process the segmented files and prepare response
+            segments_data = []
+            
+            for segment in result.get('segments', []):
+                # Create a unique identifier for this segment
+                segment_id = f"{letter}_{segment['phoneme']}_{os.urandom(4).hex()}"
+                
+                # Copy the segment file to a location that the web server can access
+                segment_path = segment['path']
+                web_accessible_path = os.path.join('static', 'segments', f"{segment_id}.wav")
+                os.makedirs(os.path.dirname(os.path.join(app.root_path, web_accessible_path)), exist_ok=True)
+                
+                try:
+                    shutil.copy(segment_path, os.path.join(app.root_path, web_accessible_path))
+                    # Create URL for the segment
+                    segment_url = f"/static/segments/{segment_id}.wav"
+                    
+                    segments_data.append({
+                        "phoneme": segment['phoneme'],
+                        "url": segment_url,
+                        "segment_id": segment_id
+                    })
+                except Exception as e:
+                    logger.exception(f"Error copying segment file: {str(e)}")
+            
+            # Create response
+            response = {
+                "success": True,
+                "letter": letter,
+                "segments": segments_data
+            }
+            
+            logger.info(f"Request {request_id}: Segmentation completed successfully with {len(segments_data)} segments")
+            return jsonify(response)
+            
+        finally:
+            # Clean up temporary input file
+            try:
+                os.unlink(temp_file_path)
+            except:
+                pass
+                
     except Exception as e:
-        logger.exception("Unhandled error in test-audio endpoint")
+        logger.exception(f"Unhandled error in segment-audio endpoint")
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/test-models', methods=['GET'])
-def test_models():
+@app.route('/analyze-segment', methods=['POST'])
+def analyze_segment():
     """
-    Test endpoint to verify that both models are loaded correctly
+    Endpoint to analyze a single segmented phoneme
     """
-    results = {}
-    
-    # Test Wave2Vec
-    wave2vec_model, wave2vec_processor = load_model("wave2vec")
-    results["wave2vec"] = {
-        "loaded": wave2vec_model is not None and wave2vec_processor is not None,
-        "model_type": type(wave2vec_model).__name__ if wave2vec_model else None
-    }
-    
-    # Test Whisper
-    whisper_model, whisper_processor = load_model("whisper")
-    results["whisper"] = {
-        "loaded": whisper_model is not None and whisper_processor is not None,
-        "model_type": type(whisper_model).__name__ if whisper_model else None
-    }
-    
-    return jsonify({
-        "status": "ok" if results["wave2vec"]["loaded"] and results["whisper"]["loaded"] else "error",
-        "models": results,
-        "timestamp": datetime.now().isoformat()
-    })
+    try:
+        # Log request
+        request_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(4).hex()}"
+        logger.info(f"Request {request_id}: Received analyze-segment request")
+        
+        # Check if segment ID is provided
+        segment_id = request.form.get('segment_id', '')
+        if not segment_id:
+            return jsonify({"error": "No segment ID provided"}), 400
+        
+        # Get the segment file path
+        segment_path = os.path.join(app.root_path, 'static', 'segments', f"{segment_id}.wav")
+        
+        if not os.path.exists(segment_path):
+            logger.warning(f"Request {request_id}: Segment file not found at {segment_path}")
+            return jsonify({"error": "Segment file not found"}), 404
+        
+        # Get phoneme
+        phoneme = request.form.get('phoneme', '')
+        if not phoneme:
+            logger.warning(f"Request {request_id}: No phoneme specified")
+            return jsonify({"error": "Please specify a phoneme"}), 400
+        
+        # Get model type
+        model_name = request.form.get('model', 'whisper')
+        
+        # Map the phoneme to supported format if needed
+        # This should be expanded based on your phoneme mapping
+        phoneme_mapping = {
+            'ee': 'ee',
+            'so': 'so',
+            'si': 'si',
+            # Add more mappings as they become available
+        }
+        
+        mapped_phoneme = phoneme_mapping.get(phoneme, '')
+        
+        if not mapped_phoneme:
+            logger.warning(f"Request {request_id}: Unsupported phoneme: {phoneme}")
+            return jsonify({
+                "error": f"Unsupported phoneme: {phoneme}. Please use one of: {', '.join(phoneme_mapping.keys())}"
+            }), 400
+        
+        # Read audio data
+        try:
+            with open(segment_path, 'rb') as f:
+                audio_data, sample_rate = read_audio_from_file(f)
+        except Exception as e:
+            logger.exception(f"Request {request_id}: Failed to read segment audio data: {str(e)}")
+            return jsonify({"error": f"Failed to read segment audio data: {str(e)}"}), 500
+        
+        # Load model
+        model, processor = load_model(model_name)
+        if model is None or processor is None:
+            logger.error(f"Request {request_id}: Failed to load {model_name} model")
+            return jsonify({"error": f"Failed to load {model_name} model"}), 500
+        
+        # Predict pronunciation
+        result = predict_audio(model, processor, audio_data, sample_rate, model_name, mapped_phoneme)
+        
+        # Add request metadata
+        result["request_id"] = request_id
+        result["phoneme"] = phoneme
+        result["mapped_phoneme"] = mapped_phoneme
+        result["segment_id"] = segment_id
+        result["timestamp"] = datetime.now().isoformat()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.exception("Unhandled error in analyze-segment endpoint")
+        return jsonify({"error": str(e)}), 500
 
+
+@app.route('/save-audio', methods=['POST'])
+def save_audio():
+    """
+    Endpoint to save audio file to the input directory
+    """
+    try:
+        # Log request
+        request_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(4).hex()}"
+        logger.info(f"Request {request_id}: Received save-audio request")
+        
+        # Check if audio file is present
+        if 'audio' not in request.files:
+            logger.warning(f"Request {request_id}: No audio file provided")
+            return jsonify({"error": "No audio file provided"}), 400
+        
+        # Get audio file
+        audio_file = request.files['audio']
+        
+        # Check if letter name is provided
+        letter = request.form.get('letter', '')
+        if not letter:
+            logger.warning(f"Request {request_id}: No letter specified")
+            return jsonify({"error": "Please specify a letter name"}), 400
+        
+        # Generate a filename based on letter and timestamp
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        filename = f"input.wav"
+        filepath = os.path.join(INPUT_DIR, filename)
+        
+        # Save the file
+        audio_file.save(filepath)
+        logger.info(f"Request {request_id}: Saved audio file to {filepath}")
+        
+        # Return the file path and name
+        return jsonify({
+            "success": True,
+            "message": "Audio file saved successfully",
+            "filename": filename,
+            "filepath": filepath,
+            "letter": letter
+        })
+        
+    except Exception as e:
+        logger.exception(f"Error saving audio file: {str(e)}")
+        return jsonify({"error": f"Failed to save audio file: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    # Import numpy here to avoid issues
-    import numpy as np
-    
-    # Set environment variable for local model path if needed
-    # os.environ["WHISPER_MODEL_PATH"] = "/path/to/your/whisper/model.pth"
-    
-    # Load models at startup
-    load_model("wave2vec")
-    load_model("whisper")
-    
+    # Preload all models at startup
+    preload_all_models()
+
     # Start the server
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"Starting server on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=True)
+    #logger.info(f"Starting server on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)  # Set debug=False in production

@@ -1,9 +1,8 @@
-// File: src/HarfSelection.jsx
+// File: src/HarfSelection.jsx (Updated)
 import React from "react";
 import { useNavigate } from "react-router-dom";
-//import { FaHome } from "react-icons/fa";
-import { Mic } from "lucide-react";
-import "./HarfSelection.css"; // Optional if you want to move styles
+import { Mic, Volume2 } from "lucide-react";
+import "./HarfSelection.css";
 
 const haroof = [
   "ا", "ب", "ت", "ث", "ج", "ح", "خ",
@@ -20,28 +19,42 @@ const HarfSelection = () => {
     audio.play();
   };
 
+  const goToHarfDetail = (index) => {
+    navigate(`/harf/${index}`);
+  };
+
   const goToHome = () => {
     navigate("/");
   };
 
   return (
-    <div className="harf-page-container">
-      <h1 className="page-title">تجوید کے حروف</h1>
+    <div className="harf-selection-container">
+      <div className="harf-selection-header">
+        
+        <h1 className="page-title">تجوید کے حروف</h1>
+        <p className="page-subtitle">Select a letter to practice its pronunciation</p>
+      </div>
 
       <div className="harf-grid">
         {haroof.map((harf, index) => (
-          <div
-            key={index}
-            className="harf-card"
-            onClick={() => playAudio(index)}
-          >
+          <div key={index} className="harf-card">
             <span className="harf">{harf}</span>
-            <span className="practice-icon" onClick={(e) => {
-              e.stopPropagation(); // prevent triggering audio
-              goToHome();
-            }}>
-              <Mic />
-            </span>
+            <div className="harf-actions">
+              <button 
+                className="action-button play-button"
+                onClick={() => playAudio(index)}
+                aria-label={`Play ${harf} sound`}
+              >
+                <Volume2 size={18} />Play
+              </button>
+              <button 
+                className="action-button practice-button"
+                onClick={() => goToHarfDetail(index)}
+                aria-label={`Practice ${harf} pronunciation`}
+              >
+                <Mic size={18} />Practice
+              </button>
+            </div>
           </div>
         ))}
       </div>

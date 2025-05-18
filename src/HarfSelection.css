@@ -1,84 +1,136 @@
-/* HarfSelection.css */
+/* File: src/HarfSelection.css */
+.harf-selection-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2rem;
+}
 
-.harf-page-container {
-  min-height: 100vh;
-  background: linear-gradient(to right, #f0f9ff, #e0ecff);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40px 20px;
+.harf-selection-header {
+  text-align: center;
+  margin-bottom: 2rem;
+  position: relative;
+}
+
+.home-button {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background-color: #f0f0f0;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.home-button:hover {
+  background-color: #e0e0e0;
 }
 
 .page-title {
-  font-size: 2.7rem;
-  font-weight: 700;
-  color: #2c2c2c;
-  margin-bottom: 30px;
-  animation: fadeInTop 0.8s ease;
-  text-align: center;
+  font-size: 2.5rem;
+  color: #333;
+  margin-bottom: 0.5rem;
 }
 
-@keyframes fadeInTop {
-  from {
-    opacity: 0;
-    transform: translateY(-25px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.page-subtitle {
+  color: #666;
+  font-size: 1.1rem;
+  margin-top: 0;
 }
 
 .harf-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 30px;
-  width: 100%;
-  max-width: 900px;
-  padding: 20px;
-  background-color: #ffffff;
-  border-radius: 20px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
-  direction: rtl;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 1.5rem;
 }
 
 .harf-card {
-  background: linear-gradient(135deg, #0f8a53ae, #60fa8c);
-  color: white;
-  font-size: 38px;
-  font-weight: bold;
-  border-radius: 15px;
-  height: 100px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  cursor: pointer;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-  box-shadow: 0 8px 15px rgba(59, 130, 246, 0.3);
-  position: relative;
+  padding: 1.5rem 1rem;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .harf-card:hover {
-  transform: scale(1.08);
-  box-shadow: 0 15px 25px rgba(59, 130, 246, 0.5);
+  transform: translateY(-5px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .harf {
-  font-size: 38px;
-  font-weight: bold;
+  font-size: 3rem;
+  color: #333;
+  margin-bottom: 1rem;
+  user-select: none;
 }
 
-.practice-icon {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  font-size: 18px;
-  color: #ffffff;
-  opacity: 0.85;
-  transition: transform 0.2s ease;
+.harf-actions {
+  display: flex;
+  gap: 0.75rem;
 }
 
-.practice-icon:hover {
-  transform: scale(1.2);
+.action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.play-button {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.play-button:hover {
+  background-color: #bbdefb;
+}
+
+.practice-button {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  width: 90px;
+  border-radius: 10%;
+}
+
+.practice-button:hover {
+  background-color: #c8e6c9;
+}
+
+@media (max-width: 768px) {
+  .harf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 1rem;
+  }
+  
+  .harf-card {
+    padding: 1rem 0.75rem;
+  }
+  
+  .harf {
+    font-size: 2.5rem;
+  }
+  
+  .page-title {
+    font-size: 2rem;
+  }
+  
+  .home-button {
+    position: relative;
+    display: block;
+    margin: 0 auto 1rem;
+  }
+  
+  .harf-selection-header {
+    text-align: center;
+  }
 }
