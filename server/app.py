@@ -10,6 +10,8 @@ from datetime import datetime
 import wave
 import io
 import struct
+import subprocess
+import shutil
 from transformers import AutoProcessor, AutoModelForAudioClassification, WhisperProcessor, WhisperModel 
 # File: app.py (Add these endpoints to your Flask backend)
 # Add these imports at the top of your file
@@ -225,9 +227,19 @@ def load_model(model_name, model_id=None, max_retries=2):
             time.sleep(wait_time)
 
 
+import io
+import wave
+import numpy as np
+import tempfile
+import os
+import logging
+from pydub import AudioSegment  # Requires ffmpeg to be installed
+
+logger = logging.getLogger(__name__)
+
 def read_audio_from_file(file_or_bytes):
     """
-    Read audio data from a file or bytes object.
+    Robust audio file reader that handles multiple formats and converts to standard WAV.
     """
     # Get bytes from file object if needed
     if hasattr(file_or_bytes, 'read'):
@@ -236,95 +248,32 @@ def read_audio_from_file(file_or_bytes):
     else:
         audio_bytes = file_or_bytes
     
-    # We'll try multiple methods to read the audio
+    # First try with pydub which handles multiple formats
     try:
-        # Method 1: Use wave module
-        logger.info("Trying to read audio with wave module")
-        with io.BytesIO(audio_bytes) as buf:
-            # Try to open with wave module
-            with wave.open(buf, 'rb') as wav_file:
-                # Get basic info
-                sample_rate = wav_file.getframerate()
-                n_channels = wav_file.getnchannels()
-                sample_width = wav_file.getsampwidth()
-                n_frames = wav_file.getnframes()
-                
-                logger.info(f"WAV info: {sample_rate}Hz, {n_channels} channels, {sample_width} bytes/sample, {n_frames} frames")
-                
-                # Read all frames
-                frames = wav_file.readframes(n_frames)
-                
-                # Convert bytes to numpy array based on sample width
-                if sample_width == 1:  # 8-bit samples
-                    dtype = np.uint8
-                    data = np.frombuffer(frames, dtype=dtype)
-                    # Convert from unsigned to signed
-                    data = data.astype(np.float32) / 128.0 - 1.0
-                elif sample_width == 2:  # 16-bit samples
-                    dtype = np.int16
-                    data = np.frombuffer(frames, dtype=dtype)
-                    # Convert to float in range [-1, 1]
-                    data = data.astype(np.float32) / 32768.0
-                elif sample_width == 4:  # 32-bit samples
-                    dtype = np.int32
-                    data = np.frombuffer(frames, dtype=dtype)
-                    # Convert to float in range [-1, 1]
-                    data = data.astype(np.float32) / 2147483648.0
-                else:
-                    raise ValueError(f"Unsupported sample width: {sample_width}")
-                
-                # If stereo, convert to mono by averaging channels
-                if n_channels == 2:
-                    data = data.reshape(-1, 2).mean(axis=1)
-                
-                # Make sure data is in float32 format and in range [-1, 1]
-                data = np.clip(data, -1.0, 1.0)
-                
-                logger.info(f"Successfully read audio data: shape={data.shape}, min={np.min(data)}, max={np.max(data)}")
-                
-                return data, sample_rate
-    except Exception as e:
-        logger.warning(f"Wave module failed: {str(e)}")
-    
-    # Method 2: Try to manually parse as PCM data
-    try:
-        logger.info("Trying to parse as PCM data")
+        logger.info("Trying to read with pydub (supports multiple formats)")
         
         # Write to temp file
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(suffix='.audio', delete=False) as temp_file:
             temp_path = temp_file.name
             temp_file.write(audio_bytes)
         
         try:
-            # Try parsing as 16kHz, 16-bit, mono PCM
-            with open(temp_path, 'rb') as f:
-                # Skip WAV header (44 bytes) if it exists
-                header = f.read(44)
-                data_bytes = f.read()
-                
-            # Try to interpret as 16-bit PCM
-            try:
-                # Convert to numpy array (16-bit signed PCM)
-                data = np.frombuffer(data_bytes, dtype=np.int16)
-                # Convert to float in range [-1, 1]
-                data = data.astype(np.float32) / 32768.0
-                # Clip to ensure range
-                data = np.clip(data, -1.0, 1.0)
-                logger.info(f"Successfully parsed as 16-bit PCM: shape={data.shape}")
-                return data, 16000  # Assume 16kHz
-            except Exception as e:
-                logger.warning(f"Failed to parse as 16-bit PCM: {str(e)}")
-                
-            # Try to interpret as 32-bit float PCM
-            try:
-                # Convert to numpy array (32-bit float)
-                data = np.frombuffer(data_bytes, dtype=np.float32)
-                # Clip to ensure range
-                data = np.clip(data, -1.0, 1.0)
-                logger.info(f"Successfully parsed as 32-bit float PCM: shape={data.shape}")
-                return data, 16000  # Assume 16kHz
-            except Exception as e:
-                logger.warning(f"Failed to parse as 32-bit float PCM: {str(e)}")
+            # Load with pydub (auto-detects format)
+            audio = AudioSegment.from_file(temp_path)
+            
+            # Convert to standard format: mono, 16kHz, 16-bit PCM
+            audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+            
+            # Convert to numpy array
+            samples = np.array(audio.get_array_of_samples())
+            sample_rate = audio.frame_rate
+            
+            # Normalize to [-1, 1] range
+            data = samples.astype(np.float32) / 32768.0
+            data = np.clip(data, -1.0, 1.0)
+            
+            logger.info(f"Successfully read with pydub: shape={data.shape}, sample_rate={sample_rate}")
+            return data, sample_rate
         finally:
             # Clean up temp file
             try:
@@ -332,18 +281,43 @@ def read_audio_from_file(file_or_bytes):
             except:
                 pass
     except Exception as e:
-        logger.warning(f"Manual PCM parsing failed: {str(e)}")
+        logger.warning(f"Pydub failed: {str(e)}")
     
-    # Method 3: Last resort - create synthetic audio
-    # This is a fallback that creates a sine wave to test the pipeline
-    logger.warning("Creating synthetic audio as fallback")
+    # Fallback to original WAV parsing (for cases where pydub isn't available)
+    try:
+        logger.info("Falling back to WAV parsing")
+        with io.BytesIO(audio_bytes) as buf:
+            with wave.open(buf, 'rb') as wav_file:
+                sample_rate = wav_file.getframerate()
+                n_channels = wav_file.getnchannels()
+                sample_width = wav_file.getsampwidth()
+                n_frames = wav_file.getnframes()
+                
+                frames = wav_file.readframes(n_frames)
+                
+                if sample_width == 1:
+                    data = np.frombuffer(frames, dtype=np.uint8).astype(np.float32) / 128.0 - 1.0
+                elif sample_width == 2:
+                    data = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+                elif sample_width == 4:
+                    data = np.frombuffer(frames, dtype=np.int32).astype(np.float32) / 2147483648.0
+                else:
+                    raise ValueError(f"Unsupported sample width: {sample_width}")
+                
+                if n_channels == 2:
+                    data = data.reshape(-1, 2).mean(axis=1)
+                
+                data = np.clip(data, -1.0, 1.0)
+                return data, sample_rate
+    except Exception as e:
+        logger.warning(f"Wave module failed: {str(e)}")
+    
+    # Final fallback - return silence
+    logger.warning("All methods failed - returning silence")
     sample_rate = 16000
-    duration = 1.0  # 1 second
-    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
-    data = 0.5 * np.sin(2 * np.pi * 440 * t)  # 440 Hz sine wave
-    
+    duration = 1.0
+    data = np.zeros(int(sample_rate * duration), dtype=np.float32)
     return data, sample_rate
-
 
 def resample_audio(audio_data, orig_sample_rate, target_sample_rate=16000):
     """
@@ -946,6 +920,7 @@ def analyze_segment():
         return jsonify({"error": str(e)}), 500
 
 
+
 # Corrected save-audio endpoint
 @app.route('/save-audio', methods=['POST'])
 def save_audio():
@@ -1008,7 +983,6 @@ def save_audio():
     except Exception as e:
         logger.exception(f"Error saving audio file: {str(e)}")
         return jsonify({"error": f"Failed to save audio file: {str(e)}"}), 500
-
 if __name__ == '__main__':
     # Preload all models at startup
     preload_all_models()
