@@ -76,68 +76,225 @@ const HarfDetail = () => {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
-  // Start recording function
-  const startRecording = async () => {
+  
+// Utility function to convert audio blob to WAV format
+const convertToWav = async (audioBlob, sampleRate = 16000) => {
+  return new Promise((resolve, reject) => {
     try {
-      setErrorMessage(null);
-      audioChunksRef.current = [];
+      // Create AudioContext
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: sampleRate
+      });
       
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
+      // Create a file reader to read the blob
+      const reader = new FileReader();
       
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-      
-      mediaRecorderRef.current.onstop = async () => {
+      reader.onload = async (event) => {
         try {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-          const audioUrl = URL.createObjectURL(audioBlob);
+          // Decode the audio data
+          const audioData = await audioContext.decodeAudioData(event.target.result);
           
-          // Save to local state for preview
-          setAudioBlob(audioBlob);
-          setAudioUrl(audioUrl);
+          // Get audio buffer data
+          const numberOfChannels = audioData.numberOfChannels;
+          const length = audioData.length;
+          const sampleRate = audioData.sampleRate;
+          const channelData = [];
           
-          // Reset segments and results when recording new audio
-          setSegments([]);
-          setSegmentedAudio(null);
-          setResults({});
-          setOverallScore(null);
-          
-          // Save directly to server input folder
-          try {
-            const saveResult = await audioService.saveAudioToServer(audioBlob, harfInfo.name);
-            console.log('Audio saved to server:', saveResult);
-          } catch (saveError) {
-            console.error('Failed to save audio to server:', saveError);
-            // Continue with local blob since we still have it
+          // Get data for each channel
+          for (let channel = 0; channel < numberOfChannels; channel++) {
+            channelData.push(audioData.getChannelData(channel));
           }
-        } catch (error) {
-          console.error('Error processing recorded audio:', error);
-          setErrorMessage('Error processing the recording. Please try again.');
+          
+          // Create WAV file
+          const wavFile = createWaveFile(channelData, {
+            sampleRate: sampleRate,
+            isFloat: false,  // Use PCM format (16-bit)
+            numChannels: numberOfChannels
+          });
+          
+          // Create new blob with WAV format
+          const wavBlob = new Blob([wavFile], { type: 'audio/wav' });
+          resolve(wavBlob);
+        } catch (decodeError) {
+          console.error('Error decoding audio:', decodeError);
+          // If decoding fails, just return the original blob
+          resolve(audioBlob);
         }
       };
       
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-    } catch (error) {
-      console.error('Error starting recording:', error);
-      setErrorMessage('Could not access microphone. Please ensure your browser has permission to use the microphone.');
-    }
-  };
-
-  // Stop recording function
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
+      reader.onerror = (error) => {
+        console.error('Error reading file:', error);
+        reject(error);
+      };
       
-      // Stop all audio tracks
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      // Read the blob as array buffer
+      reader.readAsArrayBuffer(audioBlob);
+    } catch (error) {
+      console.error('Error converting to WAV:', error);
+      // Return original blob if conversion fails
+      resolve(audioBlob);
     }
-  };
+  });
+};
+
+// Function to create a Wave file buffer
+const createWaveFile = (channelData, options) => {
+  const { sampleRate = 16000, isFloat = false, numChannels = 1 } = options;
+  
+  // Calculate bit depth and format code
+  const bitDepth = isFloat ? 32 : 16;
+  const formatCode = isFloat ? 3 : 1; // 3 for float, 1 for PCM
+  
+  // Calculate block align and byte rate
+  const blockAlign = numChannels * (bitDepth / 8);
+  const byteRate = sampleRate * blockAlign;
+  
+  // Find the max length across all channels
+  const maxLength = Math.max(...channelData.map(channel => channel.length));
+  
+  // Calculate data size and file size
+  const dataSize = maxLength * numChannels * (bitDepth / 8);
+  const fileSize = 44 + dataSize; // 44 bytes for the header
+  
+  // Create buffer
+  const buffer = new ArrayBuffer(fileSize);
+  const view = new DataView(buffer);
+  
+  // Write WAV header
+  // "RIFF" chunk descriptor
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, fileSize - 8, true); // File size - 8 bytes
+  writeString(view, 8, 'WAVE');
+  
+  // "fmt " sub-chunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // fmt chunk size (16 bytes)
+  view.setUint16(20, formatCode, true); // Format code (1 for PCM, 3 for float)
+  view.setUint16(22, numChannels, true); // Number of channels
+  view.setUint32(24, sampleRate, true); // Sample rate
+  view.setUint32(28, byteRate, true); // Byte rate
+  view.setUint16(32, blockAlign, true); // Block align
+  view.setUint16(34, bitDepth, true); // Bits per sample
+  
+  // "data" sub-chunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true); // Data size
+  
+  // Write audio data
+  let offset = 44; // Start writing after the header
+  
+  if (isFloat) {
+    // Float32 format (32-bit)
+    for (let i = 0; i < maxLength; i++) {
+      for (let channel = 0; channel < numChannels; channel++) {
+        const sample = i < channelData[channel].length ? channelData[channel][i] : 0;
+        view.setFloat32(offset, sample, true); // true for little-endian
+        offset += 4; // 4 bytes per float32
+      }
+    }
+  } else {
+    // PCM format (16-bit)
+    for (let i = 0; i < maxLength; i++) {
+      for (let channel = 0; channel < numChannels; channel++) {
+        const sample = i < channelData[channel].length ? channelData[channel][i] : 0;
+        // Convert float -1.0 to 1.0 to 16-bit PCM
+        const pcmSample = Math.max(-1, Math.min(1, sample));
+        const int16Sample = pcmSample < 0 
+          ? pcmSample * 32768 
+          : pcmSample * 32767;
+        view.setInt16(offset, int16Sample, true); // true for little-endian
+        offset += 2; // 2 bytes per int16
+      }
+    }
+  }
+  
+  return buffer;
+};
+
+// Helper function to write strings to DataView
+const writeString = (view, offset, string) => {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
+};
+
+// Updated startRecording function
+const startRecording = async () => {
+  try {
+    setErrorMessage(null);
+    audioChunksRef.current = [];
+    
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      audio: {
+        sampleRate: 16000,  // Request 16kHz sample rate
+        channelCount: 1,    // Mono recording
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      } 
+    });
+    
+    mediaRecorderRef.current = new MediaRecorder(stream, {
+      mimeType: 'audio/webm'  // Most browsers support this
+    });
+    
+    mediaRecorderRef.current.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunksRef.current.push(event.data);
+      }
+    };
+    
+    mediaRecorderRef.current.onstop = async () => {
+      try {
+        // Create blob from recorded chunks
+        const rawBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        
+        // Convert to WAV format for better compatibility
+        const wavBlob = await convertToWav(rawBlob);
+        const audioUrl = URL.createObjectURL(wavBlob);
+        
+        // Save to local state for preview
+        setAudioBlob(wavBlob);
+        setAudioUrl(audioUrl);
+        
+        // Reset segments and results when recording new audio
+        setSegments([]);
+        setSegmentedAudio(null);
+        setResults({});
+        setOverallScore(null);
+        
+        // Save directly to server input folder
+        try {
+          const saveResult = await audioService.saveAudioToServer(wavBlob, harfInfo.name);
+          console.log('Audio saved to server:', saveResult);
+        } catch (saveError) {
+          console.error('Failed to save audio to server:', saveError);
+          // Continue with local blob since we still have it
+        }
+      } catch (error) {
+        console.error('Error processing recorded audio:', error);
+        setErrorMessage('Error processing the recording. Please try again.');
+      }
+    };
+    
+    mediaRecorderRef.current.start();
+    setIsRecording(true);
+  } catch (error) {
+    console.error('Error starting recording:', error);
+    setErrorMessage('Could not access microphone. Please ensure your browser has permission to use the microphone.');
+  }
+};
+
+// No changes needed for stopRecording function
+const stopRecording = () => {
+  if (mediaRecorderRef.current && isRecording) {
+    mediaRecorderRef.current.stop();
+    setIsRecording(false);
+    
+    // Stop all audio tracks
+    mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+  }
+};
 
   // Play reference audio
   const playReferenceAudio = () => {

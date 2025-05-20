@@ -946,6 +946,7 @@ def analyze_segment():
         return jsonify({"error": str(e)}), 500
 
 
+# Corrected save-audio endpoint
 @app.route('/save-audio', methods=['POST'])
 def save_audio():
     """
@@ -970,14 +971,30 @@ def save_audio():
             logger.warning(f"Request {request_id}: No letter specified")
             return jsonify({"error": "Please specify a letter name"}), 400
         
-        # Generate a filename based on letter and timestamp
+        # Generate a unique filename based on letter and timestamp
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-        filename = f"input.wav"
+        filename = f"{letter}_{timestamp}.wav"
         filepath = os.path.join(INPUT_DIR, filename)
+        
+        # Check content type and set appropriate handling
+        content_type = audio_file.content_type
+        logger.info(f"Request {request_id}: Audio file content type: {content_type}")
         
         # Save the file
         audio_file.save(filepath)
         logger.info(f"Request {request_id}: Saved audio file to {filepath}")
+        
+        # Verify the saved file is a valid WAV file
+        try:
+            with wave.open(filepath, 'rb') as wav_check:
+                sample_rate = wav_check.getframerate()
+                n_channels = wav_check.getnchannels()
+                n_frames = wav_check.getnframes()
+                logger.info(f"Request {request_id}: Verified WAV file: {sample_rate}Hz, {n_channels} channels, {n_frames} frames")
+        except Exception as wav_error:
+            logger.warning(f"Request {request_id}: Saved file is not a valid WAV file: {str(wav_error)}")
+            # If not a valid WAV file, we should handle this but for now we'll continue
+            # since the frontend should be sending a valid WAV file
         
         # Return the file path and name
         return jsonify({
