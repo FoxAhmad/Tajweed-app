@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 # Set a constant for the input directory
 INPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'input')
+logger.info(INPUT_DIR)
 os.makedirs(INPUT_DIR, exist_ok=True)
 
 def run_segmentation_pipeline(audio_file_path, letter_name):
@@ -32,12 +33,12 @@ def run_segmentation_pipeline(audio_file_path, letter_name):
         
         # If the audio_file_path is not already in the input directory, copy it there
         if not audio_file_path.startswith(INPUT_DIR):
-            # Generate a filename for the input file
-            input_filename = f"{letter_name}_{uuid.uuid4().hex}.wav"
+            # # Generate a filename for the input file
+            input_filename = f"input.wav"
             input_file_path = os.path.join(INPUT_DIR, input_filename)
             
-            # Copy the audio file to the input directory
-            shutil.copy(audio_file_path, input_file_path)
+            # # Copy the audio file to the input directory
+            # shutil.copy(audio_file_path, input_file_path)
         else:
             # The file is already in the input directory
             input_file_path = audio_file_path

@@ -22,7 +22,7 @@ const phoneticMap = {
   'ذ': { name: 'zhaal', phonemes: ['zh', 'aa', 'l'] },
   'ر': { name: 'raa', phonemes: ['r', 'aa'] },
   'ز': { name: 'zaa', phonemes: ['z', 'aa'] },
-  'س': { name: 'seen', phonemes: ['s', 'ee', 'n'] },
+  'س': { name: 'seen', phonemes: ['si', 'ee', 'n'] },
   'ش': { name: 'sheen', phonemes: ['sh', 'ee', 'n'] },
   'ص': { name: 'saad', phonemes: ['s', 'aa', 'd'] },
   'ض': { name: 'daad', phonemes: ['du', 'aa', 'd'] },
