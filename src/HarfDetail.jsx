@@ -24,7 +24,7 @@ const phoneticMap = {
   'ز': { name: 'zaa', phonemes: ['z', 'aa'] },
   'س': { name: 'seen', phonemes: ['si', 'ee', 'n'] },
   'ش': { name: 'sheen', phonemes: ['sh', 'ee', 'n'] },
-  'ص': { name: 'saad', phonemes: ['s', 'aa', 'd'] },
+  'ص': { name: 'saad', phonemes: ['so', 'aa', 'd'] },
   'ض': { name: 'daad', phonemes: ['du', 'aa', 'd'] },
   'ط': { name: 'tua', phonemes: ['tu', 'aa'] },
   'ظ': { name: 'zua', phonemes: ['zu', 'aa'] },
@@ -46,6 +46,7 @@ const supportedPhonemeMap = {
   'ee': 'ee',
   'so': 'so',
   'si': 'si',
+  'aa': 'aa',
   // Add more mappings as they become available in the backend
 };
 
@@ -72,6 +73,7 @@ const HarfDetail = () => {
   const [segments, setSegments] = useState([]);
   const [segmentedAudio, setSegmentedAudio] = useState(null);
   const [usePipeline, setUsePipeline] = useState(true);
+  const [selectedModel, setSelectedModel] = useState('whisper');
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -329,8 +331,8 @@ const stopRecording = () => {
     setErrorMessage(null);
 
     try {
-      // Run the segmentation pipeline
-      const result = await audioService.segmentAudio(audioBlob, harfInfo.name);
+      // Run the segmentation pipeline with the selected model
+      const result = await audioService.segmentAudio(audioBlob, harfInfo.name, selectedModel);
       
       // Store the segments
       setSegments(result.segments);
@@ -366,8 +368,8 @@ const stopRecording = () => {
       }
 
       if (usePipeline && segments.length > 0) {
-        // Analyze each segment using the API
-        const segmentResults = await audioService.analyzeAllSegments(segments, 'whisper');
+        // Analyze each segment using the API with the selected model
+        const segmentResults = await audioService.analyzeAllSegments(segments, selectedModel);
         
         // Set the results
         setResults(segmentResults);
@@ -399,7 +401,7 @@ const stopRecording = () => {
           try {
             const formData = new FormData();
             formData.append('audio', audioBlob, 'recording.wav');
-            formData.append('model', 'whisper'); // Default to whisper
+            formData.append('model', selectedModel); // Use the selected model
             formData.append('phoneme', mappedPhoneme);
 
             const response = await fetch(`${API_BASE_URL}/analyze-tajweed`, {
@@ -529,6 +531,28 @@ const stopRecording = () => {
           </div>
         </div>
 
+        {/* Model Selection UI */}
+<div className="model-selection" role="radiogroup" aria-label="Model Selection">
+  <label className="model-label">Select a Speech Recognition Model:</label>
+  <div className="model-options">
+    {['whisper', 'wave2vec'].map((model) => (
+      <label className="model-option" key={model}>
+        <input
+          type="radio"
+          name="model"
+          value={model}
+          checked={selectedModel === model}
+          onChange={() => setSelectedModel(model)}
+          disabled={isProcessing}
+          aria-checked={selectedModel === model}
+        />
+        <span>{model === 'whisper' ? 'Whisper' : 'Wave2Vec'}</span>
+      </label>
+    ))}
+  </div>
+</div>
+
+
         <div className="action-buttons">
           {usePipeline && !segmentedAudio && audioBlob && (
             <button 
@@ -601,6 +625,11 @@ const stopRecording = () => {
                 <div className="phoneme-status">{result.correct ? 'Correct' : 'Needs Practice'}</div>
                 <div className="phoneme-confidence">{result.confidence}% confidence</div>
                 <div className="phoneme-feedback">{result.recommendation}</div>
+                {result.model_name && (
+                  <div className="phoneme-model">
+                    <small>Analyzed with: {result.model_name}</small>
+                  </div>
+                )}
               </div>
             ))}
           </div>

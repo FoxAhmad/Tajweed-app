@@ -30,6 +30,10 @@ const PHONEME_MODEL_MAPPING = {
   'si': {
     'whisper': 'ahmad1703/whisper_si',
     'wave2vec': 'xxmoeedxx/wav2vec2_si'
+  },
+  'aa': {
+    'whisper': 'ahmad1703/whisper_aa',
+    'wave2vec': 'xxmoeedxx/wav2vec2_aa'
   }
 };
 
@@ -130,8 +134,8 @@ function HomePage({
         </div>
           
         <button
-          className={`process-btn ${(!audioBlob || !selectedPhoneme || serverStatus !== 'ready') ? 'disabled' : ''}`}
-          disabled={!audioBlob || !selectedPhoneme || isProcessing || serverStatus !== 'ready'}
+          className={`process-btn ${(!audioBlob || !selectedPhoneme ) ? 'disabled' : ''}`}
+          disabled={!audioBlob || !selectedPhoneme || isProcessing }
           onClick={processAudio}
         >
           {isProcessing ? 'Analyzing...' : 'Analyze Pronunciation'}

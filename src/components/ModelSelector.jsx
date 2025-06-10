@@ -14,6 +14,10 @@ const PHONEME_MODEL_MAPPING = {
   'si': {
     'whisper': 'ahmad1703/whisper_si',
     'wave2vec': 'xxmoeedxx/wav2vec2_si'
+  },
+  'aa': {
+    'whisper': 'ahmad1703/whisper_aa',
+    'wave2vec': 'xxmoeedxx/wav2vec2_aa'
   }
 };
 

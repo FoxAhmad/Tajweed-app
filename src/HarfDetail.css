@@ -7,6 +7,61 @@
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
+.model-selection {
+  margin-top: 1.5rem;
+  background-color: #f5f7fa;
+  padding: 1.25rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.model-label {
+  display: block;
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  color: #2c3e50;
+}
+
+.model-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  background-color: #ffffff;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.model-option:hover,
+.model-option input:focus + span {
+  border-color: #007bff;
+  background-color: #eef6ff;
+}
+
+.model-option input {
+  margin-right: 0.5rem;
+  accent-color: #007bff;
+  cursor: pointer;
+}
+
+.model-option span {
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.phoneme-model {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #757575;
+  font-style: italic;
+}
 
 .harf-detail-header {
   display: flex;
@@ -761,3 +816,7 @@
     font-size: 1.75rem;
   }
 }
+/* Add these styles to HarfDetail.css */
+
+/* Add these styles to your HarfDetail.css file */
+

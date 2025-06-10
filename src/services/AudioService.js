@@ -1,4 +1,5 @@
-// File: src/services/AudioService.js
+// File: src/services/AudioService.js (Updated)
+
 /**
  * Service for handling audio recording, segmentation and analysis
  */
@@ -51,13 +52,15 @@ class AudioService {
    * Segments an audio file into phonemes using the backend pipeline
    * @param {Blob} audioBlob - The audio blob to segment
    * @param {string} letter - The letter name (e.g., 'alif', 'ba')
+   * @param {string} model - The model to use (whisper or wave2vec)
    * @returns {Promise<Object>} - The segmentation results
    */
-  async segmentAudio(audioBlob, letter) {
+  async segmentAudio(audioBlob, letter, model = 'whisper') {
     try {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.wav');
       formData.append('letter', letter);
+      formData.append('model', model);  // Include the model parameter
 
       const response = await fetch(`${this.apiBaseUrl}/segment-audio`, {
         method: 'POST',
