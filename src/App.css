@@ -446,7 +446,7 @@ p {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-6);
-  background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+  background: linear-gradient(135deg, var(--brand-green), var(--brand-green-dark));
   color: var(--neutral-0);
   border: none;
   border-radius: var(--radius-lg);
@@ -555,7 +555,7 @@ p {
 }
 
 .record-btn {
-  background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+  background: linear-gradient(135deg, var(--brand-green), var(--brand-green-dark));
   color: var(--neutral-0);
   box-shadow: var(--shadow-md);
 }
@@ -621,7 +621,7 @@ p {
 .drop-area {
   width: 100%;
   min-height: 120px;
-  border: 2px dashed var(--primary-300);
+  border: 2px dashed var(--brand-green);
   border-radius: var(--radius-xl);
   display: flex;
   align-items: center;
@@ -651,8 +651,8 @@ p {
 }
 
 .drop-area:hover {
-  background: linear-gradient(135deg, var(--primary-100), var(--neutral-100));
-  border-color: var(--primary-500);
+  background: linear-gradient(135deg,  var(--brand-green-light), var(--brand-green-light));
+  border-color: var(--brand-green-dark);
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
 }

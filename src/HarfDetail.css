@@ -137,7 +137,7 @@ body {
   margin: 0;
   padding: 2%;
   flex: 1;
-  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+  background: linear-gradient(135deg, black, var(--brand-green));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -259,7 +259,7 @@ body {
 }
 
 .record-button {
-  background: linear-gradient(135deg, var(--success-color), var(--success-dark));
+  background: linear-gradient(135deg, var(--brand-green), var(--success-dark));
   color: var(--white);
 }
 
@@ -342,15 +342,15 @@ body {
 
 .model-option:hover {
   background: var(--gray-100);
-  border-color: var(--primary-color);
+  border-color: var(--brand-green);
 }
 
 .model-option input[type="radio"] {
-  accent-color: var(--primary-color);
+  accent-color: var(--brand-green);
 }
 
 .model-option input[type="radio"]:checked + span {
-  color: var(--primary-color);
+  color: var(--brand-green);
   font-weight: 600;
 }
 

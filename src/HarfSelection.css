@@ -103,7 +103,7 @@
 .page-title {
   font-size: clamp(2rem, 5vw, 3.5rem);
   font-weight: 800;
-  background: linear-gradient(135deg, var(--brand-green), var(--primary-500));
+  background: linear-gradient(135deg, var(--brand-green), black);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -186,7 +186,7 @@
   left: -2px;
   right: -2px;
   bottom: -2px;
-  background: linear-gradient(45deg, var(--primary-500), var(--brand-green), var(--primary-500));
+  background: linear-gradient(45deg, black , var(--brand-green));
   border-radius: var(--radius-2xl);
   z-index: -1;
   opacity: 0;
@@ -231,7 +231,7 @@
 }
 
 .harf-card:hover .harf {
-  color: var(--primary-600);
+  
   transform: scale(1.1);
   text-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
 }
@@ -281,7 +281,7 @@
 
 .play-button {
   background: linear-gradient(135deg, var(--primary-100), var(--primary-200));
-  color: var(--primary-700);
+  color: var(--brand-green);
   border: 1px solid var(--primary-300);
   width: 32px;
   height: 32px;
@@ -300,7 +300,7 @@
 
 .practice-button {
   background: linear-gradient(135deg, var(--success-100), var(--success-200));
-  color: var(--success-700);
+  color: white;
   border: 1px solid var(--success-300);
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-lg);
