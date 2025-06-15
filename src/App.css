@@ -838,6 +838,448 @@ p {
   font-size: var(--text-xs);
   font-weight: 600;
 }
+/* Enhanced CSS for CNN Model Integration */
+
+/* Model Badge Styles */
+.model-badges {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.model-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.model-badge.cnn {
+  background: linear-gradient(135deg, #FF6B6B, #FF8E8E);
+  color: white;
+}
+
+.model-badge.whisper {
+  background: linear-gradient(135deg, #4ECDC4, #6EE7E0);
+  color: white;
+}
+
+.model-badge.wave2vec {
+  background: linear-gradient(135deg, #45B7D1, #67C3DD);
+  color: white;
+}
+
+/* Enhanced Model Selection Styles */
+.model-selection {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px 0;
+  border: 1px solid #e9ecef;
+}
+
+.model-label {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 16px;
+}
+
+.model-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.model-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: white;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.model-option:hover {
+  border-color: #007bff;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.1);
+}
+
+.model-option input[type="radio"] {
+  margin: 0;
+  margin-top: 2px;
+}
+
+.model-option input[type="radio"]:checked + .model-details {
+  color: #007bff;
+}
+
+.model-option:has(input[type="radio"]:checked) {
+  border-color: #007bff;
+  background: linear-gradient(135deg, #f8fbff, #fff);
+  box-shadow: 0 2px 12px rgba(0, 123, 255, 0.15);
+}
+
+.model-details {
+  flex: 1;
+}
+
+.model-details h4 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.model-details p {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #6c757d;
+  line-height: 1.4;
+}
+
+.model-id {
+  font-size: 12px;
+  color: #868e96;
+  font-family: 'Courier New', monospace;
+}
+
+.model-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.model-description {
+  font-size: 14px;
+  color: #6c757d;
+  display: block;
+  margin: 4px 0;
+}
+
+.model-specs {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.model-speed,
+.model-accuracy {
+  font-size: 12px;
+  color: #495057;
+  background: #f8f9fa;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Model Comparison Styles */
+.model-comparison {
+  margin-top: 20px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f8f9fa, #fff);
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.model-comparison h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #495057;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.comparison-item {
+  font-size: 12px;
+  color: #6c757d;
+  padding: 4px 0;
+}
+
+.comparison-item strong {
+  color: #495057;
+}
+
+/* Selected Configuration Styles */
+.selected-config {
+  background: linear-gradient(135deg, #e8f4fd, #f8fbff);
+  border: 1px solid #bee5eb;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.selected-config h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0c5460;
+}
+
+.config-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.config-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.config-label {
+  font-size: 14px;
+  color: #495057;
+  font-weight: 500;
+}
+
+.config-value {
+  font-size: 14px;
+  color: #2c3e50;
+  font-weight: 600;
+}
+
+.config-value.model-cnn {
+  color: #FF6B6B;
+}
+
+.config-value.model-whisper {
+  color: #4ECDC4;
+}
+
+.config-value.model-wave2vec {
+  color: #45B7D1;
+}
+
+.config-value.model-id {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #6c757d;
+  font-weight: normal;
+}
+
+/* Enhanced Phoneme Tag Styles */
+.phoneme-tag {
+  display: inline-block;
+  padding: 6px 12px;
+  margin: 4px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.phoneme-tag.supported {
+  background: linear-gradient(135deg, #d1ecf1, #bee5eb);
+  color: #0c5460;
+  border-color: #bee5eb;
+}
+
+.phoneme-tag.unsupported {
+  background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+  color: #721c24;
+  border-color: #f5c6cb;
+  opacity: 0.7;
+}
+
+.phoneme-tag.correct {
+  background: linear-gradient(135deg, #d4edda, #c3e6cb);
+  color: #155724;
+  border-color: #c3e6cb;
+}
+
+.phoneme-tag.incorrect {
+  background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+  color: #721c24;
+  border-color: #f5c6cb;
+}
+
+/* Enhanced Process Button Styles */
+.process-btn {
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: white;
+  border: none;
+  padding: 14px 28px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+}
+
+.process-btn:hover:not(.disabled) {
+  background: linear-gradient(135deg, #0056b3, #004085);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+}
+
+.process-btn.disabled {
+  background: linear-gradient(135deg, #6c757d, #495057);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.process-btn .spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #ffffff4d;
+  border-top: 2px solid #ffffff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Enhanced Analyze Button Styles */
+.analyze-button {
+  background: linear-gradient(135deg, #28a745, #1e7e34);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analyze-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1e7e34, #155724);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(40, 167, 69, 0.3);
+}
+
+.analyze-button:disabled {
+  background: linear-gradient(135deg, #6c757d, #495057);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.analyze-button .spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ffffff4d;
+  border-top: 2px solid #ffffff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* No Models Warning */
+.no-models-warning {
+  background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+  border: 1px solid #ffeaa7;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.no-models-warning p {
+  margin: 0;
+  color: #856404;
+  font-weight: 500;
+}
+
+/* Enhanced Results Section */
+.results-section {
+  margin-top: 24px;
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid #e9ecef;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.score-details p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: #6c757d;
+}
+
+.phoneme-result {
+  background: white;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+  transition: all 0.2s ease;
+}
+
+.phoneme-result.correct {
+  border-color: #28a745;
+  background: linear-gradient(135deg, #f8fff9, #fff);
+}
+
+.phoneme-result.incorrect {
+  border-color: #dc3545;
+  background: linear-gradient(135deg, #fff8f8, #fff);
+}
+
+.phoneme-confidence {
+  font-size: 14px;
+  color: #495057;
+  margin: 4px 0;
+  font-weight: 500;
+}
+
+.phoneme-timing {
+  margin-top: 8px;
+}
+
+.phoneme-timing small {
+  color: #6c757d;
+  font-size: 12px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .comparison-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .config-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  
+  .model-options {
+    gap: 8px;
+  }
+  
+  .model-option {
+    padding: 12px;
+  }
+  
+  .model-specs {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
 
 /* ========================================
    BUTTONS & CONTROLS

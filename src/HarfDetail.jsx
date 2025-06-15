@@ -1,4 +1,4 @@
-// File: src/HarfDetail.jsx
+// File: src/HarfDetail.jsx (Updated with CNN support)
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Play, MicIcon, ArrowLeft, Volume2, Award, RotateCcw, Layers } from "lucide-react";
@@ -9,7 +9,7 @@ import AudioService from "./services/AudioService";
 const API_BASE_URL = 'http://localhost:5000';
 const audioService = new AudioService(API_BASE_URL);
 
-// The phonetic mapping of Arabic letters
+// The phonetic mapping of Arabic letters (unchanged)
 const phoneticMap = {
   'ا': { name: 'alif', phonemes: ['a', 'l', 'i', 'f'] },
   'ب': { name: 'ba', phonemes: ['b', 'aa'] },
@@ -41,14 +41,32 @@ const phoneticMap = {
   'ی': { name: 'yaa', phonemes: ['y', 'aa'] }
 };
 
-// Map to our supported phonemes in the backend
+// Updated map to include CNN models for supported phonemes
 const supportedPhonemeMap = {
-  'ee': 'ee',
-  'so': 'so',
-  'si': 'si',
-  'aa': 'aa',
-  'n':'n',
-  // Add more mappings as they become available in the backend
+  'ee': {
+    'whisper': 'ahmad1703/whisper_ee',
+    'wave2vec': 'xxmoeedxx/wav2vec2_ee',
+    'cnn': 'ee_cnn_spectrogram_model.pth'
+  },
+  'so': {
+    'whisper': 'ahmad1703/whisper_so',
+    'wave2vec': 'xxmoeedxx/wav2vec2_so',
+    'cnn': 'so_cnn_spectrogram_model.pth'
+  },
+  'si': {
+    'whisper': 'ahmad1703/whisper_si',
+    'wave2vec': 'xxmoeedxx/wav2vec2_si',
+    'cnn': 'si_cnn_spectrogram_model.pth'
+  },
+  'aa': {
+    'whisper': 'ahmad1703/whisper_aa',
+    'wave2vec': 'xxmoeedxx/wav2vec2_aa',
+    'cnn': 'aa_cnn_spectrogram_model.pth'
+  },
+  'n': {
+    'wave2vec': 'xxmoeedxx/wav2vec2_n',
+    'cnn': 'n_cnn_spectrogram_model.pth'
+  }
 };
 
 const haroof = [
@@ -74,13 +92,62 @@ const HarfDetail = () => {
   const [segments, setSegments] = useState([]);
   const [segmentedAudio, setSegmentedAudio] = useState(null);
   const [usePipeline, setUsePipeline] = useState(true);
-  const [selectedModel, setSelectedModel] = useState('whisper');
+  const [selectedModel, setSelectedModel] = useState('cnn'); // Default to CNN for faster feedback
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
-  
-// Utility function to convert audio blob to WAV format
+  // Get available models for current harf's phonemes
+  const getAvailableModels = () => {
+    const availableModels = new Set();
+    
+    harfInfo.phonemes.forEach(phoneme => {
+      if (supportedPhonemeMap[phoneme]) {
+        Object.keys(supportedPhonemeMap[phoneme]).forEach(model => {
+          availableModels.add(model);
+        });
+      }
+    });
+    
+    return Array.from(availableModels);
+  };
+
+  const availableModels = getAvailableModels();
+
+  // Ensure selected model is available for this harf
+  useEffect(() => {
+    if (!availableModels.includes(selectedModel) && availableModels.length > 0) {
+      setSelectedModel(availableModels[0]);
+    }
+  }, [harfId, availableModels, selectedModel]);
+
+  // Get model display name and description
+  const getModelInfo = (modelType) => {
+    const modelInfo = {
+      'cnn': {
+        name: 'CNN',
+        description: 'Fast spectrogram analysis',
+        speed: 'Very Fast',
+        accuracy: 'Good'
+      },
+      'wave2vec': {
+        name: 'Wave2Vec',
+        description: 'Precision phoneme analysis',
+        speed: 'Medium',
+        accuracy: 'High'
+      },
+      'whisper': {
+        name: 'Whisper',
+        description: 'Contextual analysis',
+        speed: 'Slower',
+        accuracy: 'Very High'
+      }
+    };
+    
+    return modelInfo[modelType] || { name: modelType, description: 'AI Model', speed: 'Unknown', accuracy: 'Unknown' };
+  };
+
+// Utility function to convert audio blob to WAV format (unchanged)
 const convertToWav = async (audioBlob, sampleRate = 16000) => {
   return new Promise((resolve, reject) => {
     try {
@@ -140,7 +207,7 @@ const convertToWav = async (audioBlob, sampleRate = 16000) => {
   });
 };
 
-// Function to create a Wave file buffer
+// Function to create a Wave file buffer (unchanged)
 const createWaveFile = (channelData, options) => {
   const { sampleRate = 16000, isFloat = false, numChannels = 1 } = options;
   
@@ -214,14 +281,14 @@ const createWaveFile = (channelData, options) => {
   return buffer;
 };
 
-// Helper function to write strings to DataView
+// Helper function to write strings to DataView (unchanged)
 const writeString = (view, offset, string) => {
   for (let i = 0; i < string.length; i++) {
     view.setUint8(offset + i, string.charCodeAt(i));
   }
 };
 
-// Updated startRecording function
+// Updated startRecording function (unchanged)
 const startRecording = async () => {
   try {
     setErrorMessage(null);
@@ -229,8 +296,8 @@ const startRecording = async () => {
     
     const stream = await navigator.mediaDevices.getUserMedia({ 
       audio: {
-        sampleRate: 16000,  // Request 16kHz sample rate
-        channelCount: 1,    // Mono recording
+        sampleRate: 16000,
+        channelCount: 1,
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true
@@ -238,7 +305,7 @@ const startRecording = async () => {
     });
     
     mediaRecorderRef.current = new MediaRecorder(stream, {
-      mimeType: 'audio/webm'  // Most browsers support this
+      mimeType: 'audio/webm'
     });
     
     mediaRecorderRef.current.ondataavailable = (event) => {
@@ -288,7 +355,7 @@ const startRecording = async () => {
   }
 };
 
-// No changes needed for stopRecording function
+// No changes needed for stopRecording function (unchanged)
 const stopRecording = () => {
   if (mediaRecorderRef.current && isRecording) {
     mediaRecorderRef.current.stop();
@@ -299,17 +366,19 @@ const stopRecording = () => {
   }
 };
 
-  // Play reference audio
-  const playReferenceAudio = () => {
-    const audio = new Audio(`/sounds/arabic_letter_voice_${parseInt(harfId) + 1}.wav`);
-    audio.play();
-  };
-// Toggle pipeline usage
+// Play reference audio (unchanged)
+const playReferenceAudio = () => {
+  const audio = new Audio(`/sounds/arabic_letter_voice_${parseInt(harfId) + 1}.wav`);
+  audio.play();
+};
+
+// Toggle pipeline usage (unchanged)
 const togglePipeline = () => {
   setUsePipeline(!usePipeline);
   console.log('Pipeline toggled:', !usePipeline);
 };
-// Segment the audio using Docker pipeline
+
+// Segment the audio using Docker pipeline (unchanged)
 const segmentAudio = async () => {
   if (!audioBlob) {
     setErrorMessage('Please record your pronunciation first.');
@@ -341,7 +410,7 @@ const segmentAudio = async () => {
   }
 };
 
-// Simplified pronunciation checking
+// Updated pronunciation checking with CNN support
 const checkPronunciation = async () => {
   if (!audioBlob) {
     setErrorMessage('Please record your pronunciation first.');
@@ -377,22 +446,16 @@ const checkPronunciation = async () => {
       console.log('Analysis summary:', summary);
       
     } else {
-      // Use the old direct analysis method if not using pipeline
+      // Use the direct analysis method (updated for CNN support)
       console.log('Using direct analysis (no segmentation)...');
       
-      // Get supported phonemes in this harf
-      const supportedPhonemeMap = {
-        'ee': 'ee',
-        'so': 'so',
-        'si': 'si',
-        'aa': 'aa',
-        'n': 'n',
-      };
-      
-      const supportedPhonemes = harfInfo.phonemes.filter(p => supportedPhonemeMap[p]);
+      // Get supported phonemes in this harf that work with the selected model
+      const supportedPhonemes = harfInfo.phonemes.filter(p => 
+        supportedPhonemeMap[p] && supportedPhonemeMap[p][selectedModel]
+      );
       
       if (supportedPhonemes.length === 0) {
-        setErrorMessage('This harf does not contain any supported phonemes for analysis yet.');
+        setErrorMessage(`This harf does not contain any phonemes supported by the ${selectedModel.toUpperCase()} model yet.`);
         setIsProcessing(false);
         return;
       }
@@ -403,15 +466,16 @@ const checkPronunciation = async () => {
       let analyzedPhonemes = 0;
 
       for (const phoneme of supportedPhonemes) {
-        const mappedPhoneme = supportedPhonemeMap[phoneme];
+        const modelId = supportedPhonemeMap[phoneme][selectedModel];
         
-        if (!mappedPhoneme) continue;
+        if (!modelId) continue;
         
         try {
           const formData = new FormData();
           formData.append('audio', audioBlob, 'recording.wav');
           formData.append('model', selectedModel);
-          formData.append('phoneme', mappedPhoneme);
+          formData.append('phoneme', phoneme);
+          formData.append('model_id', modelId);
 
           const response = await fetch(`${API_BASE_URL}/analyze-tajweed`, {
             method: 'POST',
@@ -419,7 +483,7 @@ const checkPronunciation = async () => {
           });
 
           if (!response.ok) {
-            throw new Error(`Failed to analyze phoneme ${mappedPhoneme}`);
+            throw new Error(`Failed to analyze phoneme ${phoneme}`);
           }
 
           const data = await response.json();
@@ -457,7 +521,7 @@ const checkPronunciation = async () => {
   }
 };
 
-// Enhanced reset function
+// Enhanced reset function (unchanged)
 const resetPractice = () => {
   setAudioBlob(null);
   setAudioUrl('');
@@ -469,8 +533,7 @@ const resetPractice = () => {
   console.log('Practice session reset');
 };
 
-// Updated results display section JSX
-// Replace the existing results section with this enhanced version:
+// Updated results display section JSX (unchanged)
 const renderResultsSection = () => {
   if (overallScore === null) return null;
 
@@ -485,8 +548,8 @@ const renderResultsSection = () => {
         </div>
         <h3>Overall Pronunciation</h3>
         <div className="score-details">
+          <p>Model: {getModelInfo(selectedModel).name}</p>
           <p>Analyzed: {summary.analyzedPhonemes}/{summary.totalPhonemes} phonemes</p>
-          <p>Accuracy: {summary.accuracy}%</p>
           
         </div>
       </div>
@@ -494,8 +557,6 @@ const renderResultsSection = () => {
       <div className="phoneme-results">
         <h3>Detailed Results</h3>
         {Object.entries(results).map(([phoneme, result]) => {
-          
-          
           return (
             <div 
               key={phoneme} 
@@ -507,22 +568,20 @@ const renderResultsSection = () => {
               </div>
               
               <div className="phoneme-feedback">{result.recommendation}</div>
-              {result.model_name && (
+              {result.model_used && (
                 <div className="phoneme-model">
-                  <small>Model: {result.model_name}</small>
+                  <small>Model: {getModelInfo(result.model_used).name}</small>
                 </div>
               )}
-              {result.model_id && (
-                <div className="phoneme-model-id">
-                  <small>ID: {result.model_id}</small>
+              {result.processing_time && (
+                <div className="phoneme-timing">
+                  <small>Processed in: {result.processing_time}s</small>
                 </div>
               )}
             </div>
           );
         })}
       </div>
-      
-      
     </div>
   );
 };
@@ -542,14 +601,24 @@ const renderResultsSection = () => {
       <div className="harf-info">
         <h2>{harfInfo.name}</h2>
         <div className="phonemes-list">
-          {harfInfo.phonemes.map((phoneme, index) => (
-            <span 
-              key={index} 
-              className={`phoneme-tag ${results[phoneme] ? (results[phoneme].correct ? 'correct' : 'incorrect') : ''}`}
-            >
-              {phoneme}
-            </span>
-          ))}
+          {harfInfo.phonemes.map((phoneme, index) => {
+            const isSupported = supportedPhonemeMap[phoneme] && supportedPhonemeMap[phoneme][selectedModel];
+            return (
+              <span 
+                key={index} 
+                className={`phoneme-tag ${
+                  results[phoneme] 
+                    ? (results[phoneme].correct ? 'correct' : 'incorrect') 
+                    : isSupported 
+                      ? 'supported' 
+                      : 'unsupported'
+                }`}
+                title={isSupported ? `Supported by ${getModelInfo(selectedModel).name}` : `Not supported by ${getModelInfo(selectedModel).name}`}
+              >
+                {phoneme}
+              </span>
+            );
+          })}
         </div>
       </div>
 
@@ -610,34 +679,49 @@ const renderResultsSection = () => {
           </div>
         </div>
 
-        {/* Model Selection UI */}
-<div className="model-selection" role="radiogroup" aria-label="Model Selection">
-  <label className="model-label">Select a Speech Recognition Model:</label>
-  <div className="model-options">
-    {['whisper', 'wave2vec'].map((model) => (
-      <label className="model-option" key={model}>
-        <input
-          type="radio"
-          name="model"
-          value={model}
-          checked={selectedModel === model}
-          onChange={() => setSelectedModel(model)}
-          disabled={isProcessing}
-          aria-checked={selectedModel === model}
-        />
-        <span>{model === 'whisper' ? 'Whisper' : 'Wave2Vec'}</span>
-      </label>
-    ))}
-  </div>
-</div>
-
+        {/* Enhanced Model Selection UI */}
+        <div className="model-selection" role="radiogroup" aria-label="Model Selection">
+          <label className="model-label">Select AI Model:</label>
+          <div className="model-options">
+            {availableModels.map((model) => {
+              const modelInfo = getModelInfo(model);
+              return (
+                <label className="model-option" key={model}>
+                  <input
+                    type="radio"
+                    name="model"
+                    value={model}
+                    checked={selectedModel === model}
+                    onChange={() => setSelectedModel(model)}
+                    disabled={isProcessing}
+                    aria-checked={selectedModel === model}
+                  />
+                  <div className="model-details">
+                    <span className="model-name">{modelInfo.name}</span>
+                    <span className="model-description">{modelInfo.description}</span>
+                    <div className="model-specs">
+                      <span className="model-speed">Speed: {modelInfo.speed}</span>
+                      <span className="model-accuracy">Accuracy: {modelInfo.accuracy}</span>
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+          
+          {availableModels.length === 0 && (
+            <div className="no-models-warning">
+              <p>No AI models available for this letter's phonemes yet.</p>
+            </div>
+          )}
+        </div>
 
         <div className="action-buttons">
           {usePipeline && !segmentedAudio && audioBlob && (
             <button 
               className="segment-button"
               onClick={segmentAudio}
-              disabled={!audioBlob || isProcessing}
+              disabled={!audioBlob || isProcessing || availableModels.length === 0}
             >
               <Layers size={18} />
               <span>Segment Audio</span>
@@ -647,9 +731,16 @@ const renderResultsSection = () => {
           <button 
             className="analyze-button"
             onClick={checkPronunciation}
-            disabled={!audioBlob || isProcessing}
+            disabled={!audioBlob || isProcessing || availableModels.length === 0}
           >
-            {isProcessing ? 'Analyzing...' : (usePipeline && !segmentedAudio ? 'Segment & Analyze' : 'Check Pronunciation')}
+            {isProcessing ? (
+              <>
+                <span className="spinner"></span>
+                Analyzing...
+              </>
+            ) : (
+              `Check with ${getModelInfo(selectedModel).name}${usePipeline && !segmentedAudio ? ' (Segment & Analyze)' : ''}`
+            )}
           </button>
 
           <button 
@@ -682,39 +773,8 @@ const renderResultsSection = () => {
           </div>
         </div>
       )}
+      
       <div>{renderResultsSection()}</div>
-     
-      {/* {overallScore !== null && (
-        <div className="results-section">
-          <div className="overall-score">
-            <div className="score-badge">
-              <Award size={24} />
-              <span>{overallScore}%</span>
-            </div>
-            <h3>Overall Pronunciation</h3>
-          </div>
-
-          <div className="phoneme-results">
-            <h3>Detailed Results</h3>
-            {Object.entries(results).map(([phoneme, result]) => (
-              <div 
-                key={phoneme} 
-                className={`phoneme-result ${result.correct ? 'correct' : 'incorrect'}`}
-              >
-                <div className="phoneme-name">{phoneme}</div>
-                <div className="phoneme-status">{result.correct ? 'Correct' : 'Needs Practice'}</div>
-                <div className="phoneme-confidence">{result.confidence}% confidence</div>
-                <div className="phoneme-feedback">{result.recommendation}</div>
-                {result.model_name && (
-                  <div className="phoneme-model">
-                    <small>Analyzed with: {result.model_name}</small>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )} */}
     </div>
   );
 };

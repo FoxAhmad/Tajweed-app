@@ -1,4 +1,4 @@
-// File: src/App.jsx (Updated)
+// File: src/App.jsx (Updated with CNN support)
 import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import { AudioRecorder } from './components/AudioRecorder';
@@ -17,26 +17,31 @@ import HarfDetail from './HarfDetail';
 // API Configuration
 const API_BASE_URL = 'http://localhost:5000';
 
-// Phoneme-to-model mapping
+// Updated Phoneme-to-model mapping including CNN models
 const PHONEME_MODEL_MAPPING = {
   'ee': {
     'whisper': 'ahmad1703/whisper_ee', 
-    'wave2vec': 'xxmoeedxx/wav2vec2_ee'
+    'wave2vec': 'xxmoeedxx/wav2vec2_ee',
+    'cnn': 'ee_cnn_spectrogram_model.pth'
   },
   'so': {
     'whisper': 'ahmad1703/whisper_so',
-    'wave2vec': 'xxmoeedxx/wav2vec2_so'
+    'wave2vec': 'xxmoeedxx/wav2vec2_so',
+    'cnn': 'so_cnn_spectrogram_model.pth'
   },
   'si': {
     'whisper': 'ahmad1703/whisper_si',
-    'wave2vec': 'xxmoeedxx/wav2vec2_si'
+    'wave2vec': 'xxmoeedxx/wav2vec2_si',
+    'cnn': 'si_cnn_spectrogram_model.pth'
   },
   'aa': {
     'whisper': 'ahmad1703/whisper_aa',
-    'wave2vec': 'xxmoeedxx/wav2vec2_aa'
+    'wave2vec': 'xxmoeedxx/wav2vec2_aa',
+    'cnn': 'aa_cnn_spectrogram_model.pth'
   },
   'n': {
-    'wave2vec': 'xxmoeedxx/wav2vec2_n'
+    'wave2vec': 'xxmoeedxx/wav2vec2_n',
+    'cnn': 'n_cnn_spectrogram_model.pth'
   }
 };
 
@@ -77,7 +82,12 @@ function HomePage({
       <div className="dashboard-cards">
         <div className="dashboard-card" onClick={() => navigate('/harf-selection')}>
           <h2>Qaida Practice</h2>
-          <p>Practice individual Arabic letters with pronunciation feedback</p>
+          <p>Practice individual Arabic letters with pronunciation feedback using AI models</p>
+          <div className="model-badges">
+            <span className="model-badge cnn">CNN</span>
+            <span className="model-badge whisper">Whisper</span>
+            <span className="model-badge wave2vec">Wave2Vec</span>
+          </div>
         </div>
         
         <div className="dashboard-card">
@@ -88,7 +98,7 @@ function HomePage({
         
         <div className="dashboard-card">
           <h2>Custom Analysis</h2>
-          <p>Analyze your own audio recordings for specific phonemes</p>
+          <p>Analyze your own audio recordings for specific phonemes using multiple AI models</p>
           <button 
             className="card-button"
             onClick={() => document.getElementById('custom-analysis').scrollIntoView({ behavior: 'smooth' })}
@@ -101,7 +111,7 @@ function HomePage({
       <div id="custom-analysis" className="custom-analysis-section">
         <h2>Custom Pronunciation Analysis</h2>
         <p className="section-description">
-          Upload or record audio to analyze specific phoneme pronunciation
+          Upload or record audio to analyze specific phoneme pronunciation using advanced AI models
         </p>
 
         <div className="audio-input-section">
@@ -134,14 +144,43 @@ function HomePage({
             onPhonemeChange={handlePhonemeChange}
             availablePhonemes={AVAILABLE_PHONEMES}
           />
+          
+          {selectedModel && selectedPhoneme && (
+            <div className="selected-config">
+              <h4>Selected Configuration</h4>
+              <div className="config-details">
+                <div className="config-item">
+                  <span className="config-label">Model:</span>
+                  <span className={`config-value model-${selectedModel}`}>{selectedModel.toUpperCase()}</span>
+                </div>
+                <div className="config-item">
+                  <span className="config-label">Phoneme:</span>
+                  <span className="config-value">{selectedPhoneme}</span>
+                </div>
+                <div className="config-item">
+                  <span className="config-label">Model ID:</span>
+                  <span className="config-value model-id">
+                    {PHONEME_MODEL_MAPPING[selectedPhoneme]?.[selectedModel] || 'Not available'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
           
         <button
-          className={`process-btn ${(!audioBlob || !selectedPhoneme ) ? 'disabled' : ''}`}
-          disabled={!audioBlob || !selectedPhoneme || isProcessing }
+          className={`process-btn ${(!audioBlob || !selectedPhoneme) ? 'disabled' : ''}`}
+          disabled={!audioBlob || !selectedPhoneme || isProcessing}
           onClick={processAudio}
         >
-          {isProcessing ? 'Analyzing...' : 'Analyze Pronunciation'}
+          {isProcessing ? (
+            <>
+              <span className="spinner"></span>
+              Analyzing with {selectedModel?.toUpperCase()}...
+            </>
+          ) : (
+            `Analyze Pronunciation with ${selectedModel?.toUpperCase() || 'AI'}`
+          )}
         </button>
 
         {result && <ResultDisplay result={result} />}
@@ -153,7 +192,7 @@ function HomePage({
 function App() {
   const [audioBlob, setAudioBlob] = useState(null);
   const [audioUrl, setAudioUrl] = useState('');
-  const [selectedModel, setSelectedModel] = useState('whisper');
+  const [selectedModel, setSelectedModel] = useState('cnn'); // Default to CNN for faster analysis
   const [selectedPhoneme, setSelectedPhoneme] = useState('');
   const [result, setResult] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -227,15 +266,23 @@ function App() {
 
   const handleModelChange = useCallback((model) => {
     setSelectedModel(model);
+    setResult(null); // Clear previous results when model changes
   }, []);
 
   const handlePhonemeChange = useCallback((phoneme) => {
     setSelectedPhoneme(phoneme);
+    setResult(null); // Clear previous results when phoneme changes
   }, []);
 
   const processAudio = async () => {
-    if (!audioBlob || !selectedPhoneme ) {
-      setErrorMessage('Please ensure audio is uploaded, phoneme is selected, and server is ready.');
+    if (!audioBlob || !selectedPhoneme) {
+      setErrorMessage('Please ensure audio is uploaded and phoneme is selected.');
+      return;
+    }
+
+    // Check if the selected model is available for the phoneme
+    if (!PHONEME_MODEL_MAPPING[selectedPhoneme]?.[selectedModel]) {
+      setErrorMessage(`${selectedModel.toUpperCase()} model is not available for phoneme '${selectedPhoneme}'. Please select a different model.`);
       return;
     }
     

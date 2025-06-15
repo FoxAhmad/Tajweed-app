@@ -1,23 +1,31 @@
 // File: src/components/ModelSelector.js
 import React, { useEffect } from 'react';
 
-// Phoneme mapping to model IDs
+// Updated phoneme mapping to include CNN models
 const PHONEME_MODEL_MAPPING = {
   'ee': {
     'whisper': 'ahmad1703/whisper_ee', 
-    'wave2vec': 'xxmoeedxx/wav2vec2_ee'
+    'wave2vec': 'xxmoeedxx/wav2vec2_ee',
+    'cnn': 'ee_cnn_spectrogram_model.pth'
   },
   'so': {
     'whisper': 'ahmad1703/whisper_so',
-    'wave2vec': 'xxmoeedxx/wav2vec2_so'
+    'wave2vec': 'xxmoeedxx/wav2vec2_so',
+    'cnn': 'so_cnn_spectrogram_model.pth'
   },
   'si': {
     'whisper': 'ahmad1703/whisper_si',
-    'wave2vec': 'xxmoeedxx/wav2vec2_si'
+    'wave2vec': 'xxmoeedxx/wav2vec2_si',
+    'cnn': 'si_cnn_spectrogram_model.pth'
   },
   'aa': {
     'whisper': 'ahmad1703/whisper_aa',
-    'wave2vec': 'xxmoeedxx/wav2vec2_aa'
+    'wave2vec': 'xxmoeedxx/wav2vec2_aa',
+    'cnn': 'aa_cnn_spectrogram_model.pth'
+  },
+  'n': {
+    'wave2vec': 'xxmoeedxx/wav2vec2_n',
+    'cnn': 'n_cnn_spectrogram_model.pth'
   }
 };
 
@@ -41,6 +49,32 @@ export function ModelSelector({
     }
   }, [selectedPhoneme, selectedModel, onModelChange]);
 
+  const getModelDescription = (modelType) => {
+    switch (modelType) {
+      case 'whisper':
+        return 'Better for full sentence pronunciation and contextual analysis';
+      case 'wave2vec':
+        return 'Better for individual phoneme precision and specific tajweed rules';
+      case 'cnn':
+        return 'Fast spectrogram-based analysis, optimized for individual phoneme classification';
+      default:
+        return 'Advanced model for pronunciation analysis';
+    }
+  };
+
+  const getModelDisplayName = (modelType) => {
+    switch (modelType) {
+      case 'whisper':
+        return 'Whisper Model';
+      case 'wave2vec':
+        return 'Wave2Vec Model';
+      case 'cnn':
+        return 'CNN Model';
+      default:
+        return modelType;
+    }
+  };
+
   return (
     <div className="model-selector">
       <div className="phoneme-selector">
@@ -59,49 +93,52 @@ export function ModelSelector({
       </div>
 
       {selectedPhoneme && (
-        <div className="model-options">
-          <h3>Select Model Type</h3>
-          <div className="model-option">
-            <input
-              type="radio"
-              id="whisper"
-              name="model"
-              value="whisper"
-              checked={selectedModel === 'whisper'}
-              onChange={() => onModelChange('whisper')}
-              disabled={!PHONEME_MODEL_MAPPING[selectedPhoneme]?.whisper}
-            />
-            <label htmlFor="whisper" className={!PHONEME_MODEL_MAPPING[selectedPhoneme]?.whisper ? 'disabled' : ''}>
-              <div className="model-details">
-                <h3>Whisper Model</h3>
-                <p>Better for full sentence pronunciation and contextual analysis</p>
-                {selectedPhoneme && PHONEME_MODEL_MAPPING[selectedPhoneme]?.whisper && (
-                  <small>Using model: {PHONEME_MODEL_MAPPING[selectedPhoneme].whisper}</small>
-                )}
-              </div>
-            </label>
-          </div>
+        <div>
+
+        <div className="">
+         
           
-          <div className="model-option">
-            <input
-              type="radio"
-              id="wave2vec"
-              name="model"
-              value="wave2vec"
-              checked={selectedModel === 'wave2vec'}
-              onChange={() => onModelChange('wave2vec')}
-              disabled={!PHONEME_MODEL_MAPPING[selectedPhoneme]?.wave2vec}
-            />
-            <label htmlFor="wave2vec" className={!PHONEME_MODEL_MAPPING[selectedPhoneme]?.wave2vec ? 'disabled' : ''}>
-              <div className="model-details">
-                <h3>Wave2Vec Model</h3>
-                <p>Better for individual phoneme precision and specific tajweed rules</p>
-                {selectedPhoneme && PHONEME_MODEL_MAPPING[selectedPhoneme]?.wave2vec && (
-                  <small>Using model: {PHONEME_MODEL_MAPPING[selectedPhoneme].wave2vec}</small>
-                )}
+          {/* Get available models for the selected phoneme */}
+          {Object.keys(PHONEME_MODEL_MAPPING[selectedPhoneme]).map((modelType) => (
+            <div key={modelType} className="model-option">
+              <input
+                type="radio"
+                id={modelType}
+                name="model"
+                value={modelType}
+                checked={selectedModel === modelType}
+                onChange={() => onModelChange(modelType)}
+              />
+              <label htmlFor={modelType}>
+                <div className="model-details">
+                  <h4>{getModelDisplayName(modelType)}</h4>
+                  <p>{getModelDescription(modelType)}</p>
+                  <small className="model-id">
+                    Using: {PHONEME_MODEL_MAPPING[selectedPhoneme][modelType]}
+                  </small>
+                </div>
+              </label>
+            </div>
+          ))}
+          
+          <div className="model-comparison">
+            <h4>Model Comparison</h4>
+            <div className="comparison-grid">
+              <div className="comparison-item">
+                <strong>Speed:</strong> CNN > Wave2Vec > Whisper
               </div>
-            </label>
+              <div className="comparison-item">
+                <strong>Accuracy:</strong> Whisper ≥ Wave2Vec ≥ CNN
+              </div>
+              <div className="comparison-item">
+                <strong>Best for beginners:</strong> CNN (instant feedback)
+              </div>
+              <div className="comparison-item">
+                <strong>Best for advanced:</strong> Whisper (detailed analysis)
+              </div>
+            </div>
           </div>
+        </div>
         </div>
       )}
     </div>
