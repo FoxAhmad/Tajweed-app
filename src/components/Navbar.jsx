@@ -76,10 +76,10 @@ export function Navbar() {
       
       <div className={`nav-links ${isMenuOpen ? 'open' : ''}`}>
         <a href="/" className="active">Home</a>
-        <a href="/practice">Practice</a>
-        <a href="/phonemes">Phonemes</a>
+        <a href="/harf-selection">Practice</a>
+        <a href="/harf-selection">Phonemes</a>
         <a href="/about">About</a>
-        <a href="/contact" className="cta-button">Contact Us</a>
+        <a href="/contact" >Contact Us</a>
       </div>
     </nav>
   );

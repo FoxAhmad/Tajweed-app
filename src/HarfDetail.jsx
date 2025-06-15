@@ -478,7 +478,7 @@ const renderResultsSection = () => {
   
   return (
     <div className="results-section">
-      <div className="overall-score">
+      <div className="">
         <div className="score-badge">
           <Award size={24} />
           <span>{overallScore}%</span>

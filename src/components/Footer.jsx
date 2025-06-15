@@ -63,7 +63,7 @@ export function Footer() {
       
       <div className="footer-bottom">
         <p>&copy; {new Date().getFullYear()} Tajweed Pronunciation Checker. All rights reserved.</p>
-        <p className="footer-credits">Made with <span className="footer-accent">❤️</span> by Your Name</p>
+        <p className="footer-credits">Made with <span className="footer-accent">❤️</span> by Hajiz</p>
       </div>
     </footer>
   );
