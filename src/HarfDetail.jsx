@@ -47,6 +47,7 @@ const supportedPhonemeMap = {
   'so': 'so',
   'si': 'si',
   'aa': 'aa',
+  'n':'n',
   // Add more mappings as they become available in the backend
 };
 
@@ -303,150 +304,228 @@ const stopRecording = () => {
     const audio = new Audio(`/sounds/arabic_letter_voice_${parseInt(harfId) + 1}.wav`);
     audio.play();
   };
+// Toggle pipeline usage
+const togglePipeline = () => {
+  setUsePipeline(!usePipeline);
+  console.log('Pipeline toggled:', !usePipeline);
+};
+// Segment the audio using Docker pipeline
+const segmentAudio = async () => {
+  if (!audioBlob) {
+    setErrorMessage('Please record your pronunciation first.');
+    return;
+  }
 
-  // Reset the practice
-  const resetPractice = () => {
-    setAudioBlob(null);
-    setAudioUrl('');
+  setIsProcessing(true);
+  setErrorMessage(null);
+
+  try {
+    // Run the segmentation pipeline with the selected model
+    const result = await audioService.segmentAudio(audioBlob, harfInfo.name, selectedModel);
+    
+    // Store the segments
+    setSegments(result.segments);
+    console.log('Segmentation result:', result);
+    setSegmentedAudio(result);
+    
+    // Log success
+    console.log('Audio segmented successfully:', result);
+    
+  } catch (error) {
+    console.error('Error segmenting audio:', error);
+    setErrorMessage(`Failed to segment audio: ${error.message}`);
     setSegments([]);
     setSegmentedAudio(null);
-    setResults({});
-    setOverallScore(null);
-    setErrorMessage(null);
-  };
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
-  // Toggle pipeline usage
-  const togglePipeline = () => {
-    setUsePipeline(!usePipeline);
-  };
+// Simplified pronunciation checking
+const checkPronunciation = async () => {
+  if (!audioBlob) {
+    setErrorMessage('Please record your pronunciation first.');
+    return;
+  }
 
-  // Segment the audio using Docker pipeline
-  const segmentAudio = async () => {
-    if (!audioBlob) {
-      setErrorMessage('Please record your pronunciation first.');
-      return;
-    }
+  setIsProcessing(true);
+  setErrorMessage(null);
 
-    setIsProcessing(true);
-    setErrorMessage(null);
-
-    try {
-      // Run the segmentation pipeline with the selected model
-      const result = await audioService.segmentAudio(audioBlob, harfInfo.name, selectedModel);
-      
-      // Store the segments
-      setSegments(result.segments);
-      setSegmentedAudio(result);
-      
-      // Log success
-      console.log('Audio segmented successfully:', result);
-      
-    } catch (error) {
-      console.error('Error segmenting audio:', error);
-      setErrorMessage(`Failed to segment audio: ${error.message}`);
-      setSegments([]);
-      setSegmentedAudio(null);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // Check pronunciation
-  const checkPronunciation = async () => {
-    if (!audioBlob) {
-      setErrorMessage('Please record your pronunciation first.');
-      return;
-    }
-
-    setIsProcessing(true);
-    setErrorMessage(null);
-
-    try {
-      if (usePipeline && !segmentedAudio) {
-        // First segment the audio if using the pipeline
+  try {
+    if (usePipeline) {
+      // First segment the audio if using the pipeline and not already segmented
+      if (!segmentedAudio) {
+        console.log('Segmenting audio first...');
         await segmentAudio();
       }
 
-      if (usePipeline && segments.length > 0) {
-        // Analyze each segment using the API with the selected model
-        const segmentResults = await audioService.analyzeAllSegments(segments, selectedModel);
+      // Use the simplified analysis approach
+      console.log('Starting simplified analysis of all segments...');
+      const segmentResults = await audioService.analyzeAllSegments(segments, selectedModel);
+      
+      console.log('Analysis results:', segmentResults);
+      
+      // Set the results
+      setResults(segmentResults);
+      
+      // Calculate overall score
+      const score = audioService.calculateOverallScore(segmentResults);
+      setOverallScore(score);
+      
+      // Log analysis summary
+      const summary = audioService.getAnalysisSummary(segmentResults);
+      console.log('Analysis summary:', summary);
+      
+    } else {
+      // Use the old direct analysis method if not using pipeline
+      console.log('Using direct analysis (no segmentation)...');
+      
+      // Get supported phonemes in this harf
+      const supportedPhonemeMap = {
+        'ee': 'ee',
+        'so': 'so',
+        'si': 'si',
+        'aa': 'aa',
+        'n': 'n',
+      };
+      
+      const supportedPhonemes = harfInfo.phonemes.filter(p => supportedPhonemeMap[p]);
+      
+      if (supportedPhonemes.length === 0) {
+        setErrorMessage('This harf does not contain any supported phonemes for analysis yet.');
+        setIsProcessing(false);
+        return;
+      }
+
+      // For each supported phoneme, make an API call
+      const resultMap = {};
+      let totalScore = 0;
+      let analyzedPhonemes = 0;
+
+      for (const phoneme of supportedPhonemes) {
+        const mappedPhoneme = supportedPhonemeMap[phoneme];
         
-        // Set the results
-        setResults(segmentResults);
+        if (!mappedPhoneme) continue;
         
-        // Calculate overall score
-        const score = audioService.calculateOverallScore(segmentResults);
-        setOverallScore(score);
-      } else {
-        // Use the old direct analysis method if not using pipeline or segmentation failed
-        // Get supported phonemes in this harf
-        const supportedPhonemes = harfInfo.phonemes.filter(p => supportedPhonemeMap[p]);
-        
-        if (supportedPhonemes.length === 0) {
-          setErrorMessage('This harf does not contain any supported phonemes for analysis yet.');
-          setIsProcessing(false);
-          return;
-        }
+        try {
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'recording.wav');
+          formData.append('model', selectedModel);
+          formData.append('phoneme', mappedPhoneme);
 
-        // For each supported phoneme, make an API call
-        const resultMap = {};
-        let totalScore = 0;
-        let analyzedPhonemes = 0;
+          const response = await fetch(`${API_BASE_URL}/analyze-tajweed`, {
+            method: 'POST',
+            body: formData,
+          });
 
-        for (const phoneme of supportedPhonemes) {
-          const mappedPhoneme = supportedPhonemeMap[phoneme];
-          
-          if (!mappedPhoneme) continue;
-          
-          try {
-            const formData = new FormData();
-            formData.append('audio', audioBlob, 'recording.wav');
-            formData.append('model', selectedModel); // Use the selected model
-            formData.append('phoneme', mappedPhoneme);
-
-            const response = await fetch(`${API_BASE_URL}/analyze-tajweed`, {
-              method: 'POST',
-              body: formData,
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to analyze phoneme ${mappedPhoneme}`);
-            }
-
-            const data = await response.json();
-            
-            if (data.error) {
-              throw new Error(data.error);
-            }
-            
-            resultMap[phoneme] = data;
-            
-            // Calculate score (0-100)
-            const score = data.correct ? data.confidence : (100 - data.confidence);
-            totalScore += score;
-            analyzedPhonemes++;
-            
-          } catch (error) {
-            console.error(`Error analyzing phoneme ${phoneme}:`, error);
-            resultMap[phoneme] = { error: error.message };
+          if (!response.ok) {
+            throw new Error(`Failed to analyze phoneme ${mappedPhoneme}`);
           }
-        }
 
-        // Set the results
-        setResults(resultMap);
-        
-        // Calculate overall score
-        if (analyzedPhonemes > 0) {
-          setOverallScore(Math.round(totalScore / analyzedPhonemes));
+          const data = await response.json();
+          
+          if (data.error) {
+            throw new Error(data.error);
+          }
+          
+          resultMap[phoneme] = data;
+          
+          // Calculate score (0-100)
+          const score = data.correct ? data.confidence : (100 - data.confidence);
+          totalScore += score;
+          analyzedPhonemes++;
+          
+        } catch (error) {
+          console.error(`Error analyzing phoneme ${phoneme}:`, error);
+          resultMap[phoneme] = { error: error.message };
         }
       }
-    } catch (error) {
-      console.error('Error processing audio:', error);
-      setErrorMessage(error.message || 'Failed to analyze pronunciation.');
-    } finally {
-      setIsProcessing(false);
+
+      // Set the results
+      setResults(resultMap);
+      
+      // Calculate overall score
+      if (analyzedPhonemes > 0) {
+        setOverallScore(Math.round(totalScore / analyzedPhonemes));
+      }
     }
-  };
+  } catch (error) {
+    console.error('Error processing audio:', error);
+    setErrorMessage(error.message || 'Failed to analyze pronunciation.');
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
+// Enhanced reset function
+const resetPractice = () => {
+  setAudioBlob(null);
+  setAudioUrl('');
+  setSegments([]);
+  setSegmentedAudio(null);
+  setResults({});
+  setOverallScore(null);
+  setErrorMessage(null);
+  console.log('Practice session reset');
+};
+
+// Updated results display section JSX
+// Replace the existing results section with this enhanced version:
+const renderResultsSection = () => {
+  if (overallScore === null) return null;
+
+  const summary = audioService.getAnalysisSummary(results);
+  
+  return (
+    <div className="results-section">
+      <div className="overall-score">
+        <div className="score-badge">
+          <Award size={24} />
+          <span>{overallScore}%</span>
+        </div>
+        <h3>Overall Pronunciation</h3>
+        <div className="score-details">
+          <p>Analyzed: {summary.analyzedPhonemes}/{summary.totalPhonemes} phonemes</p>
+          <p>Accuracy: {summary.accuracy}%</p>
+          
+        </div>
+      </div>
+
+      <div className="phoneme-results">
+        <h3>Detailed Results</h3>
+        {Object.entries(results).map(([phoneme, result]) => {
+          
+          
+          return (
+            <div 
+              key={phoneme} 
+              className={`phoneme-result ${result.correct ? 'correct' : 'incorrect'}`}
+            >
+              <div className="phoneme-name">{phoneme}</div>
+              <div className="phoneme-status">
+                {result.correct ? 'Correct' : 'Needs Practice'}
+              </div>
+              
+              <div className="phoneme-feedback">{result.recommendation}</div>
+              {result.model_name && (
+                <div className="phoneme-model">
+                  <small>Model: {result.model_name}</small>
+                </div>
+              )}
+              {result.model_id && (
+                <div className="phoneme-model-id">
+                  <small>ID: {result.model_id}</small>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      
+      
+    </div>
+  );
+};
 
   return (
     <div className="harf-detail-container">
@@ -603,8 +682,9 @@ const stopRecording = () => {
           </div>
         </div>
       )}
-
-      {overallScore !== null && (
+      <div>{renderResultsSection()}</div>
+     
+      {/* {overallScore !== null && (
         <div className="results-section">
           <div className="overall-score">
             <div className="score-badge">
@@ -634,7 +714,7 @@ const stopRecording = () => {
             ))}
           </div>
         </div>
-      )}
+      )} */}
     </div>
   );
 };

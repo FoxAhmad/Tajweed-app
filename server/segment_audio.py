@@ -30,7 +30,7 @@ def run_segmentation_pipeline(audio_file_path, letter_name):
         # Create directory for segments output
         segments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'segments')
         os.makedirs(segments_dir, exist_ok=True)
-        
+        print(segments_dir)
         # If the audio_file_path is not already in the input directory, copy it there
         if not audio_file_path.startswith(INPUT_DIR):
             # # Generate a filename for the input file
@@ -86,7 +86,7 @@ def run_segmentation_pipeline(audio_file_path, letter_name):
                 # Get phoneme name from filename (assuming format like 'alif_a.wav')
                 parts = filename.split('_')
                 if len(parts) > 1:
-                    phoneme = parts[1].split('.')[0]  # Extract 'a' from 'alif_a.wav'
+                    phoneme = parts[2].split('.')[0]  # Extract 'a' from 'alif_a.wav'
                     segmented_files.append({
                         "phoneme": phoneme,
                         "path": segment_path,

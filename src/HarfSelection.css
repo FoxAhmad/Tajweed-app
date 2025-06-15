@@ -1,136 +1,658 @@
-/* File: src/HarfSelection.css */
-.harf-selection-container {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 2rem;
+/* Enhanced HarfSelection.css - Modern, Mobile-First Responsive Design */
+
+/* ========================================
+   CSS CUSTOM PROPERTIES
+   ======================================== */
+
+:root {
+  /* Harf Selection Specific Variables */
+  --harf-card-size-mobile: 100px;
+  --harf-card-size-tablet: 130px;
+  --harf-card-size-desktop: 150px;
+  --harf-font-mobile: 2.5rem;
+  --harf-font-tablet: 3.5rem;
+  --harf-font-desktop: 4rem;
+  
+  /* Animation Variables */
+  --bounce-animation: bounce 0.6s ease-in-out;
+  --float-animation: float 3s ease-in-out infinite;
+  --glow-animation: glow 2s ease-in-out infinite alternate;
 }
+
+/* ========================================
+   MAIN CONTAINER
+   ======================================== */
+
+.harf-selection-container {
+  width: 100%;
+  max-width: min(1200px, 95vw);
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-4) var(--space-12);
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--neutral-100) 100%);
+  position: relative;
+}
+
+/* Decorative background elements */
+.harf-selection-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(circle at 20% 20%, rgba(120, 213, 119, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 40% 60%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.harf-selection-container > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ========================================
+   HEADER SECTION
+   ======================================== */
 
 .harf-selection-header {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: var(--space-12);
   position: relative;
+  padding: var(--space-8) 0;
 }
 
 .home-button {
   position: absolute;
   left: 0;
-  top: 0;
-  background-color: #f0f0f0;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: linear-gradient(135deg, var(--neutral-100), var(--neutral-200));
+  border: 1px solid var(--neutral-300);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-full);
   cursor: pointer;
-  font-weight: 500;
-  transition: background-color 0.2s;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--neutral-700);
+  transition: var(--transition-all);
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
 }
 
 .home-button:hover {
-  background-color: #e0e0e0;
+  background: linear-gradient(135deg, var(--neutral-200), var(--neutral-300));
+  transform: translateY(-50%) translateY(-2px);
+  box-shadow: var(--shadow-md);
+  color: var(--neutral-800);
+}
+
+.home-button:focus {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
+}
+
+.home-button svg {
+  width: 18px;
+  height: 18px;
 }
 
 .page-title {
-  font-size: 2.5rem;
-  color: #333;
-  margin-bottom: 0.5rem;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--brand-green), var(--primary-500));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: var(--space-3);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  animation: var(--float-animation);
 }
 
 .page-subtitle {
-  color: #666;
-  font-size: 1.1rem;
-  margin-top: 0;
+  color: var(--neutral-600);
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+  font-weight: 500;
+  margin: 0;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.6;
+  opacity: 0.9;
 }
+
+/* ========================================
+   HARF GRID LAYOUT
+   ======================================== */
 
 .harf-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(var(--harf-card-size-mobile), 1fr));
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  justify-items: center;
 }
+
+/* ========================================
+   HARF CARDS
+   ======================================== */
 
 .harf-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 1.5rem 1rem;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
+  justify-content: space-between;
+  width: 100%;
+  max-width: var(--harf-card-size-desktop);
+  aspect-ratio: 1;
+  background: linear-gradient(135deg, var(--neutral-0) 0%, var(--neutral-50) 100%);
+  border: 2px solid var(--neutral-200);
+  border-radius: var(--radius-2xl);
+  padding: var(--space-4);
+  cursor: pointer;
+  transition: var(--transition-all);
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
+  animation: fadeInUp 0.6s ease-out;
+  animation-fill-mode: both;
+}
+
+/* Stagger animation for grid items */
+.harf-card:nth-child(1) { animation-delay: 0.1s; }
+.harf-card:nth-child(2) { animation-delay: 0.15s; }
+.harf-card:nth-child(3) { animation-delay: 0.2s; }
+.harf-card:nth-child(4) { animation-delay: 0.25s; }
+.harf-card:nth-child(5) { animation-delay: 0.3s; }
+.harf-card:nth-child(6) { animation-delay: 0.35s; }
+.harf-card:nth-child(7) { animation-delay: 0.4s; }
+.harf-card:nth-child(8) { animation-delay: 0.45s; }
+.harf-card:nth-child(9) { animation-delay: 0.5s; }
+.harf-card:nth-child(10) { animation-delay: 0.55s; }
+
+/* Continue pattern for more cards */
+.harf-card:nth-child(n+11) { animation-delay: 0.6s; }
+
+/* Hover glow effect */
+.harf-card::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, var(--primary-500), var(--brand-green), var(--primary-500));
+  border-radius: var(--radius-2xl);
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+
+.harf-card:hover::before {
+  opacity: 1;
 }
 
 .harf-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: var(--shadow-2xl);
+  border-color: transparent;
 }
 
-.harf {
-  font-size: 3rem;
-  color: #333;
-  margin-bottom: 1rem;
-  user-select: none;
+.harf-card:active {
+  transform: translateY(-4px) scale(0.98);
 }
+
+/* Focus state for keyboard navigation */
+.harf-card:focus {
+  outline: 3px solid var(--primary-500);
+  outline-offset: 3px;
+}
+
+/* ========================================
+   HARF CHARACTER
+   ======================================== */
+
+.harf {
+  font-size: var(--harf-font-mobile);
+  font-weight: 800;
+  color: var(--neutral-800);
+  margin-bottom: var(--space-2);
+  user-select: none;
+  text-align: center;
+  line-height: 1;
+  transition: var(--transition-all);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: relative;
+}
+
+.harf-card:hover .harf {
+  color: var(--primary-600);
+  transform: scale(1.1);
+  text-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+}
+
+/* ========================================
+   ACTION BUTTONS
+   ======================================== */
 
 .harf-actions {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-2);
+  width: 100%;
+  justify-content: center;
+  align-items: center;
 }
 
 .action-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: var(--transition-all);
+  font-weight: 600;
+  font-size: var(--text-xs);
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Shine effect on buttons */
+.action-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transition: left 0.5s ease;
+}
+
+.action-button:hover::before {
+  left: 100%;
 }
 
 .play-button {
-  background-color: #e3f2fd;
-  color: #1976d2;
+  background: linear-gradient(135deg, var(--primary-100), var(--primary-200));
+  color: var(--primary-700);
+  border: 1px solid var(--primary-300);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
 }
 
 .play-button:hover {
-  background-color: #bbdefb;
+  background: linear-gradient(135deg, var(--primary-200), var(--primary-300));
+  transform: scale(1.1);
+  box-shadow: var(--shadow-md);
+}
+
+.play-button:active {
+  transform: scale(0.95);
 }
 
 .practice-button {
-  background-color: #e8f5e9;
-  color: #2e7d32;
-  width: 90px;
-  border-radius: 10%;
+  background: linear-gradient(135deg, var(--success-100), var(--success-200));
+  color: var(--success-700);
+  border: 1px solid var(--success-300);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-lg);
+  flex: 1;
+  min-height: 32px;
+  font-size: var(--text-xs);
 }
 
 .practice-button:hover {
-  background-color: #c8e6c9;
+  background: linear-gradient(135deg, var(--success-200), var(--success-300));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
-@media (max-width: 768px) {
-  .harf-grid {
-    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-    gap: 1rem;
+.practice-button:active {
+  transform: translateY(0);
+}
+
+/* ========================================
+   LOADING & INTERACTION STATES
+   ======================================== */
+
+.harf-card.loading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.harf-card.loading .harf {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ========================================
+   RESPONSIVE DESIGN
+   ======================================== */
+
+/* Small Mobile (320px - 480px) */
+@media (max-width: 480px) {
+  .harf-selection-container {
+    padding: var(--space-2);
   }
-  
+
+  .harf-selection-header {
+    margin-bottom: var(--space-8);
+    padding: var(--space-4) 0;
+  }
+
+  .home-button {
+    position: relative;
+    transform: none;
+    display: inline-flex;
+    margin-bottom: var(--space-4);
+    font-size: var(--text-xs);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .harf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: var(--space-3);
+  }
+
   .harf-card {
-    padding: 1rem 0.75rem;
+    padding: var(--space-3);
+    border-radius: var(--radius-xl);
+  }
+
+  .harf {
+    font-size: 2rem;
+    margin-bottom: var(--space-1);
+  }
+
+  .harf-actions {
+    gap: var(--space-1);
+  }
+
+  .play-button {
+    width: 28px;
+    height: 28px;
+  }
+
+  .practice-button {
+    font-size: 0.6rem;
+    padding: var(--space-1) var(--space-2);
+    min-height: 28px;
+  }
+}
+
+/* Mobile (481px - 768px) */
+@media (min-width: 481px) and (max-width: 768px) {
+  .harf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(var(--harf-card-size-mobile), 1fr));
+    gap: var(--space-4);
+  }
+
+  .harf {
+    font-size: var(--harf-font-mobile);
+  }
+
+  .home-button {
+    position: relative;
+    transform: none;
+    display: inline-flex;
+    margin-bottom: var(--space-4);
+  }
+}
+
+/* Tablet (769px - 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .harf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(var(--harf-card-size-tablet), 1fr));
+    gap: var(--space-5);
+  }
+
+  .harf {
+    font-size: var(--harf-font-tablet);
+  }
+
+  .harf-card {
+    padding: var(--space-5);
+  }
+
+  .play-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .practice-button {
+    font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-4);
+    min-height: 36px;
+  }
+}
+
+/* Desktop (1025px+) */
+@media (min-width: 1025px) {
+  .harf-selection-container {
+    padding: var(--space-8) var(--space-6) var(--space-16);
+  }
+
+  .harf-selection-header {
+    margin-bottom: var(--space-16);
+    padding: var(--space-12) 0;
+  }
+
+  .harf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(var(--harf-card-size-desktop), 1fr));
+    gap: var(--space-6);
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  .harf {
+    font-size: var(--harf-font-desktop);
+  }
+
+  .harf-card {
+    padding: var(--space-6);
+  }
+
+  .play-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .practice-button {
+    font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-4);
+    min-height: 40px;
+  }
+
+  /* Show additional hover effects on desktop */
+  .harf-card:hover {
+    transform: translateY(-12px) scale(1.05);
+  }
+}
+
+/* Large Desktop (1440px+) */
+@media (min-width: 1440px) {
+  .harf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: var(--space-8);
+  }
+}
+
+/* ========================================
+   ANIMATIONS
+   ======================================== */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-10px);
+  }
+  60% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes glow {
+  from {
+    text-shadow: 0 0 5px rgba(59, 130, 246, 0.3);
+  }
+  to {
+    text-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* ========================================
+   ACCESSIBILITY IMPROVEMENTS
+   ======================================== */
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .harf-card {
+    border: 3px solid var(--neutral-900);
   }
   
   .harf {
-    font-size: 2.5rem;
+    color: var(--neutral-900);
   }
   
-  .page-title {
-    font-size: 2rem;
+  .action-button {
+    border: 2px solid var(--neutral-900);
+  }
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .harf-card,
+  .page-title,
+  .harf,
+  .action-button {
+    animation: none !important;
+    transition: none !important;
+  }
+  
+  .harf-card:hover {
+    transform: none !important;
+  }
+}
+
+/* Focus visible for better keyboard navigation */
+.harf-card:focus-visible {
+  outline: 3px solid var(--primary-500);
+  outline-offset: 3px;
+}
+
+.action-button:focus-visible {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
+}
+
+/* ========================================
+   PRINT STYLES
+   ======================================== */
+
+@media print {
+  .harf-selection-container {
+    background: white;
+    box-shadow: none;
+  }
+  
+  .harf-selection-container::before {
+    display: none;
+  }
+  
+  .harf-card {
+    break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid var(--neutral-400);
+  }
+  
+  .action-button {
+    display: none;
   }
   
   .home-button {
-    position: relative;
-    display: block;
-    margin: 0 auto 1rem;
+    display: none;
+  }
+}
+
+/* ========================================
+   DARK MODE SUPPORT (if needed)
+   ======================================== */
+
+@media (prefers-color-scheme: dark) {
+  .harf-selection-container {
+    background: linear-gradient(135deg, var(--neutral-900) 0%, var(--neutral-800) 100%);
   }
   
-  .harf-selection-header {
-    text-align: center;
+  .harf-card {
+    background: linear-gradient(135deg, var(--neutral-800) 0%, var(--neutral-700) 100%);
+    border-color: var(--neutral-600);
+  }
+  
+  .harf {
+    color: var(--neutral-100);
+  }
+  
+  .page-title {
+    color: var(--neutral-100);
+  }
+  
+  .page-subtitle {
+    color: var(--neutral-300);
   }
 }

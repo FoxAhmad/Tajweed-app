@@ -63,6 +63,9 @@ PHONEME_MODEL_MAPPING = {
     'aa':{
         'whisper': 'ahmad1703/whisper_aa',
         'wave2vec': 'xxmoeedxx/wav2vec2_aa'
+    },
+    'n':{
+        'wave2vec': 'xxmoeedxx/wav2vec2_n'
     }
 }
 
@@ -271,9 +274,9 @@ def read_audio_file_improved(file_or_bytes):
         return data, sample_rate
 
 
-def preprocess_audio_for_whisper(audio_data, sample_rate):
+def preprocess_audio_for_whisper(audio_data, sample_rate, allow_short=False):
     """
-    Specialized preprocessing for Whisper models.
+    Specialized preprocessing for Whisper models with support for short segments.
     """
     # Ensure audio is float32
     audio_data = audio_data.astype(np.float32)
@@ -289,19 +292,28 @@ def preprocess_audio_for_whisper(audio_data, sample_rate):
         logger.info(f"Audio amplitude too high ({max_val}), normalizing...")
         audio_data = audio_data / max_val
     
-    # Ensure minimum length (0.1 seconds)
-    min_samples = int(0.1 * sample_rate)
+    # For segments, we allow much shorter audio
+    if allow_short:
+        min_samples = int(0.01 * sample_rate)  # 0.01 seconds minimum for segments
+        logger.info(f"Using short segment mode, minimum samples: {min_samples}")
+    else:
+        min_samples = int(0.1 * sample_rate)  # 0.1 seconds minimum for full recordings
+    
+    # Ensure minimum length
     if len(audio_data) < min_samples:
         logger.info(f"Audio too short ({len(audio_data)} samples), padding to {min_samples} samples")
         pad_length = min_samples - len(audio_data)
         audio_data = np.pad(audio_data, (0, pad_length), mode='constant', constant_values=0.0)
     
-    # Trim silence from beginning and end
-    try:
-        audio_data, _ = librosa.effects.trim(audio_data, top_db=20)
-        logger.info(f"Audio after trimming: {len(audio_data)} samples")
-    except:
-        logger.warning("Could not trim audio, using original")
+    # For very short segments, don't trim silence as it might remove the entire signal
+    if not allow_short or len(audio_data) > int(0.2 * sample_rate):
+        try:
+            audio_data, _ = librosa.effects.trim(audio_data, top_db=20)
+            logger.info(f"Audio after trimming: {len(audio_data)} samples")
+        except:
+            logger.warning("Could not trim audio, using original")
+    else:
+        logger.info("Skipping silence trimming for short segment")
     
     # Ensure we still have enough audio after trimming
     if len(audio_data) < min_samples:
@@ -309,30 +321,40 @@ def preprocess_audio_for_whisper(audio_data, sample_rate):
     
     return audio_data
 
-
-def predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme=None):
+def predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme=None, is_segment=False):
     """
-    Improved audio prediction with better preprocessing and error handling.
+    Improved audio prediction with support for short segments.
     """
     try:
         start_time = time.time()
-        logger.info(f"Processing audio with {model_name} model, phoneme: {phoneme}")
+        logger.info(f"Processing audio with {model_name} model, phoneme: {phoneme}, is_segment: {is_segment}")
         
         # Check audio length
         audio_length = len(audio_data) / sample_rate
-        logger.info(f"Audio length: {audio_length:.2f} seconds")
+        logger.info(f"Audio length: {audio_length:.3f} seconds")
         
-        if audio_length > MAX_AUDIO_LENGTH:
+        # Different length requirements for segments vs full recordings
+        if is_segment:
+            max_length = 5.0  # Allow up to 5 seconds for segments
+            min_length = 0.005  # Allow segments as short as 5 milliseconds
+        else:
+            max_length = MAX_AUDIO_LENGTH  # 30 seconds for full recordings
+            min_length = 0.1  # 0.1 seconds for full recordings
+        
+        if audio_length > max_length:
             return {
-                "error": f"Audio is too long. Maximum allowed length is {MAX_AUDIO_LENGTH} seconds.",
+                "error": f"Audio is too long. Maximum allowed length is {max_length} seconds.",
                 "audio_length": audio_length
             }
         
-        if audio_length < 0.1:
-            return {
-                "error": "Audio is too short. Minimum length is 0.1 seconds.",
-                "audio_length": audio_length
-            }
+        if audio_length < min_length:
+            if is_segment:
+                logger.warning(f"Very short segment ({audio_length:.3f}s), proceeding with analysis")
+            else:
+                return {
+                    "error": f"Audio is too short. Minimum length is {min_length} seconds.",
+                    "audio_length": audio_length
+                }
         
         # Get device
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -347,6 +369,13 @@ def predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme
                 sample_rate = 16000
             
             try:
+                # For very short segments, ensure we have enough samples for Wave2Vec
+                min_wave2vec_samples = 320  # About 0.02 seconds at 16kHz
+                if len(audio_data) < min_wave2vec_samples:
+                    logger.info(f"Padding very short segment from {len(audio_data)} to {min_wave2vec_samples} samples")
+                    pad_length = min_wave2vec_samples - len(audio_data)
+                    audio_data = np.pad(audio_data, (0, pad_length), mode='edge')  # Use 'edge' to repeat the last value
+                
                 # Process input
                 inputs = processor(
                     audio_data, 
@@ -385,8 +414,8 @@ def predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme
         elif model_name == "whisper":
             logger.info("Processing audio with Whisper model")
             
-            # Specialized preprocessing for Whisper
-            audio_data = preprocess_audio_for_whisper(audio_data, sample_rate)
+            # Specialized preprocessing for Whisper with short segment support
+            audio_data = preprocess_audio_for_whisper(audio_data, sample_rate, allow_short=is_segment)
             
             try:
                 # Process input features for Whisper
@@ -452,7 +481,8 @@ def predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme
             "recommendation": feedback,
             "processing_time": round(time.time() - start_time, 3),
             "model_used": model_name,
-            "audio_length": round(audio_length, 2)
+            "audio_length": round(audio_length, 3),
+            "is_segment": is_segment
         }
         
         logger.info(f"Final result: {result}")
@@ -461,7 +491,6 @@ def predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme
     except Exception as e:
         logger.exception("Error processing audio data")
         return {"error": str(e)}
-
 
 def get_detailed_feedback(phoneme, prediction, confidence):
     """
@@ -723,133 +752,316 @@ def segment_audio():
             
             # Process the segmented files
             segments_data = []
+            i = 1
+            logger.info(f"Request {request_id}: Processing {len(result.get('segments', []))} segments")
+            logger.info(f"Request {request_id}: Segments from pipeline: {result.get('segments', [])}")
             
             for segment in result.get('segments', []):
-                segment_id = f"{letter}_{segment['phoneme']}_{os.urandom(4).hex()}"
+                logger.info(f"Request {request_id}: Processing segment {i} - phoneme: {segment['phoneme']}")
+                
+                segment_id = f"input_{i}_{segment['phoneme']}"
                 segment_path = segment['path']
-                web_accessible_path = os.path.join('static', 'segments', f"{segment_id}.wav")
-                os.makedirs(os.path.dirname(os.path.join(app.root_path, web_accessible_path)), exist_ok=True)
+                
+                # Log the original segment path from Docker pipeline
+                logger.info(f"Request {request_id}: Original segment path from Docker: {segment_path}")
+                
+                # Check if the source file exists
+                if not os.path.exists(segment_path):
+                    logger.error(f"Request {request_id}: Source segment file does not exist: {segment_path}")
+                    # Try to find the file in common locations
+                    possible_source_paths = [
+                        os.path.join('segments', 'input', f"input_{i}_{segment['phoneme']}.wav"),
+                        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'segments', 'input', f"input_{i}_{segment['phoneme']}.wav"),
+                        os.path.join('segments', f"input_{i}_{segment['phoneme']}.wav"),
+                    ]
+                    
+                    for alt_path in possible_source_paths:
+                        logger.info(f"Request {request_id}: Trying alternative source path: {alt_path}")
+                        if os.path.exists(alt_path):
+                            segment_path = alt_path
+                            logger.info(f"Request {request_id}: ✓ Found segment at: {segment_path}")
+                            break
+                    else:
+                        logger.error(f"Request {request_id}: Could not find segment file anywhere")
+                        continue
+                
+                # Create the web-accessible path matching the URL structure
+                # URL will be /segments/input/input_X_phoneme.wav, so copy to static/segments/input/
+                web_accessible_path = os.path.join('static', 'segments', 'input', f"{segment_id}.wav")
+                web_accessible_full_path = os.path.join(app.root_path, web_accessible_path)
+                
+                # Ensure the directory exists
+                os.makedirs(os.path.dirname(web_accessible_full_path), exist_ok=True)
+                logger.info(f"Request {request_id}: Created directory: {os.path.dirname(web_accessible_full_path)}")
                 
                 try:
-                    shutil.copy(segment_path, os.path.join(app.root_path, web_accessible_path))
-                    segment_url = f"/static/segments/{segment_id}.wav"
+                    # Copy the segment file to web-accessible location
+                    logger.info(f"Request {request_id}: Copying from {segment_path} to {web_accessible_full_path}")
+                    shutil.copy(segment_path, web_accessible_full_path)
                     
-                    segments_data.append({
+                    # Verify the copy was successful
+                    if os.path.exists(web_accessible_full_path):
+                        file_size = os.path.getsize(web_accessible_full_path)
+                        logger.info(f"Request {request_id}: ✓ Successfully copied segment, size: {file_size} bytes")
+                    else:
+                        logger.error(f"Request {request_id}: ✗ Copy failed - destination file doesn't exist")
+                        continue
+                    
+                    # Generate the URL that matches the file location
+                    segment_url = f"/segments/input/{segment_id}.wav"
+                    
+                    segment_data = {
                         "phoneme": segment['phoneme'],
                         "url": segment_url,
                         "segment_id": segment_id,
-                        "original_filename": segment['filename']
-                    })
+                        "original_filename": segment.get('filename', f"{segment_id}.wav"),
+                        "file_path": web_accessible_full_path,  # For debugging
+                        "source_path": segment_path  # For debugging
+                    }
+                    
+                    segments_data.append(segment_data)
+                    logger.info(f"Request {request_id}: ✓ Added segment to response: {segment_data}")
+                    
                 except Exception as e:
-                    logger.exception(f"Error copying segment file: {str(e)}")
+                    logger.exception(f"Request {request_id}: Error copying segment file from {segment_path} to {web_accessible_full_path}: {str(e)}")
+                    continue
+                
+                i += 1
+            
+            # Final verification - check all copied files exist
+            logger.info(f"Request {request_id}: Final verification of copied segments:")
+            for segment_data in segments_data:
+                if os.path.exists(segment_data['file_path']):
+                    logger.info(f"Request {request_id}: ✓ {segment_data['segment_id']} exists at {segment_data['file_path']}")
+                else:
+                    logger.error(f"Request {request_id}: ✗ {segment_data['segment_id']} missing at {segment_data['file_path']}")
             
             response = {
                 "success": True,
                 "letter": letter,
                 "model": model_name,
-                "segments": segments_data
+                "segments": segments_data,
+                "total_segments": len(segments_data)
             }
-            
-            logger.info(f"Request {request_id}: Segmentation completed with {len(segments_data)} segments")
+           
+            logger.info(f"Request {request_id}: Segmentation completed successfully with {len(segments_data)} segments")
             return jsonify(response)
             
         finally:
             try:
                 os.unlink(temp_file_path)
-            except:
-                pass
+                logger.info(f"Request {request_id}: Cleaned up temporary file: {temp_file_path}")
+            except Exception as e:
+                logger.warning(f"Request {request_id}: Failed to clean up temp file: {str(e)}")
                 
     except Exception as e:
-        logger.exception(f"Unhandled error in segment-audio endpoint")
+        logger.exception(f"Request {request_id}: Unhandled error in segment-audio endpoint")
+        return jsonify({"error": str(e)}), 500
+# Add these simplified endpoints to your Flask app.py
+
+@app.route('/analyze-all-segments', methods=['POST'])
+def analyze_all_segments():
+    """
+    Updated endpoint to analyze all segments with short segment support
+    """
+    try:
+        request_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(4).hex()}"
+        logger.info(f"Request {request_id}: Received analyze-all-segments request")
+        
+        # Get model type from request
+        model_name = request.form.get('model', 'whisper')
+        if model_name not in ['whisper', 'wave2vec']:
+            return jsonify({"error": "Invalid model type. Use 'whisper' or 'wave2vec'"}), 400
+        
+        # Define segments directory - try both possible locations
+        possible_dirs = [
+            os.path.join("segments", "input"),
+            os.path.join("server", "segments", "input"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "segments", "input")
+        ]
+        
+        segments_dir = None
+        for dir_path in possible_dirs:
+            if os.path.exists(dir_path):
+                segments_dir = dir_path
+                break
+        
+        if not segments_dir:
+            logger.error(f"Request {request_id}: Segments directory not found in any expected location")
+            return jsonify({"error": "Segments directory not found"}), 404
+        
+        logger.info(f"Request {request_id}: Using segments directory: {segments_dir}")
+        
+        # Get all WAV files from segments directory
+        try:
+            segment_files = [f for f in os.listdir(segments_dir) if f.endswith('.wav')]
+            segment_files.sort()  # Sort for consistent order
+            logger.info(f"Request {request_id}: Found {len(segment_files)} segment files: {segment_files}")
+        except Exception as e:
+            logger.exception(f"Request {request_id}: Error reading segments directory")
+            return jsonify({"error": f"Error reading segments directory: {str(e)}"}), 500
+        
+        if not segment_files:
+            logger.warning(f"Request {request_id}: No segment files found")
+            return jsonify({"error": "No segment files found in segments directory"}), 404
+        
+        # Process each segment file
+        results = {}
+        
+        for filename in segment_files:
+            file_path = os.path.join(segments_dir, filename)
+            logger.info(f"Request {request_id}: Processing {filename}")
+            
+            try:
+                # Extract phoneme from filename (format: input_X_phoneme.wav)
+                phoneme = extract_phoneme_from_filename(filename)
+                logger.info(f"Request {request_id}: Extracted phoneme '{phoneme}' from {filename}")
+                
+                if not phoneme:
+                    logger.warning(f"Request {request_id}: Could not extract phoneme from {filename}")
+                    results[filename] = {"error": "Could not extract phoneme from filename"}
+                    continue
+                
+                # Check if phoneme is supported
+                if phoneme not in PHONEME_MODEL_MAPPING:
+                    logger.warning(f"Request {request_id}: Unsupported phoneme '{phoneme}'")
+                    results[phoneme] = {"error": f"Unsupported phoneme: {phoneme}"}
+                    continue
+                
+                # Get model ID for this phoneme
+                model_id = PHONEME_MODEL_MAPPING[phoneme].get(model_name)
+                if not model_id:
+                    logger.warning(f"Request {request_id}: No {model_name} model available for phoneme '{phoneme}'")
+                    results[phoneme] = {"error": f"No {model_name} model available for phoneme {phoneme}"}
+                    continue
+                
+                logger.info(f"Request {request_id}: Using model {model_id} for phoneme '{phoneme}'")
+                
+                # Load model
+                model, processor = load_model(model_name, model_id)
+                if model is None or processor is None:
+                    logger.error(f"Request {request_id}: Failed to load model {model_id}")
+                    results[phoneme] = {"error": f"Failed to load model {model_id}"}
+                    continue
+                
+                # Read and analyze audio
+                with open(file_path, 'rb') as f:
+                    audio_data, sample_rate = read_audio_file_improved(f)
+                
+                # Run prediction with segment flag
+                result = predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme, is_segment=True)
+                
+                # Add metadata
+                result.update({
+                    "phoneme": phoneme,
+                    "filename": filename,
+                    "model_name": model_name,
+                    "model_id": model_id
+                })
+                
+                results[phoneme] = result
+                logger.info(f"Request {request_id}: Analysis complete for '{phoneme}' - "
+                          f"{'correct' if result.get('correct', False) else 'incorrect'} "
+                          f"with {result.get('confidence', 0):.2f}% confidence")
+                
+            except Exception as e:
+                logger.exception(f"Request {request_id}: Error processing {filename}")
+                phoneme_key = phoneme if 'phoneme' in locals() else filename
+                results[phoneme_key] = {"error": str(e)}
+        
+        # Prepare response
+        response = {
+            "success": True,
+            "request_id": request_id,
+            "model_name": model_name,
+            "segments_directory": segments_dir,
+            "total_segments": len(segment_files),
+            "results": results,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        logger.info(f"Request {request_id}: Completed analysis of {len(segment_files)} segments")
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.exception("Unhandled error in analyze-all-segments endpoint")
         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/analyze-segment', methods=['POST'])
 def analyze_segment():
     """
-    Endpoint to analyze a single segmented phoneme
+    Updated endpoint to analyze a single segment with short segment support
     """
     try:
         request_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(4).hex()}"
         logger.info(f"Request {request_id}: Received analyze-segment request")
         
+        # Get parameters
         segment_id = request.form.get('segment_id', '')
-        if not segment_id:
-            return jsonify({"error": "No segment ID provided"}), 400
-        
-        # Find segment file
-        segment_path = os.path.join(app.root_path, 'static', 'segments', f"{segment_id}.wav")
-        
-        if not os.path.exists(segment_path):
-            segments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'segments')
-            alternate_paths = [
-                os.path.join(segments_dir, f"{segment_id}.wav"),
-                os.path.join(segments_dir, segment_id)
-            ]
-            
-            for alt_path in alternate_paths:
-                if os.path.exists(alt_path):
-                    segment_path = alt_path
-                    break
-            else:
-                return jsonify({"error": "Segment file not found"}), 404
-        
-        logger.info(f"Request {request_id}: Found segment file at {segment_path}")
-        
-        phoneme = request.form.get('phoneme', '')
-        if not phoneme:
-            return jsonify({"error": "Please specify a phoneme"}), 400
-        
         model_name = request.form.get('model', 'whisper')
+        
+        if not segment_id:
+            return jsonify({"error": "No segment_id provided"}), 400
+        
         if model_name not in ['whisper', 'wave2vec']:
             return jsonify({"error": "Invalid model type. Use 'whisper' or 'wave2vec'"}), 400
         
-        # Enhanced phoneme mapping
-        phoneme_mapping = {
-            'ee': 'ee', 'so': 'so', 'si': 'si', 'aa': 'aa',
-            'b': 'ee', 't': 'ee', 's': 'ee', 'j': 'ee', 'h': 'ee', 'hh': 'ee',
-            'kh': 'ee', 'd': 'ee', 'zh': 'ee', 'r': 'ee', 'z': 'ee', 'sh': 'ee',
-            'du': 'so', 'tu': 'so', 'zu': 'so', 'n': 'ee', 'f': 'ee', 'qa': 'so',
-            'ka': 'ee', 'l': 'ee', 'm': 'ee', 'wa': 'ee', 'y': 'ee', 'gh': 'so',
-            'o': 'so', 'i': 'ee', 'oo': 'so', 'u': 'so'
-        }
+        # Find segments directory
+        possible_dirs = [
+            os.path.join("segments", "input"),
+            os.path.join("server", "segments", "input"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "segments", "input")
+        ]
         
-        mapped_phoneme = phoneme_mapping.get(phoneme.lower(), 'ee')  # Default to 'ee'
-        logger.info(f"Request {request_id}: Mapping phoneme '{phoneme}' to '{mapped_phoneme}'")
+        segments_dir = None
+        for dir_path in possible_dirs:
+            if os.path.exists(dir_path):
+                segments_dir = dir_path
+                break
         
-        # Determine model ID
-        model_id = None
-        if mapped_phoneme in PHONEME_MODEL_MAPPING and model_name in PHONEME_MODEL_MAPPING[mapped_phoneme]:
-            model_id = PHONEME_MODEL_MAPPING[mapped_phoneme][model_name]
-        else:
-            # Fallback
-            model_id = PHONEME_MODEL_MAPPING['ee'][model_name]
+        if not segments_dir:
+            return jsonify({"error": "Segments directory not found"}), 404
         
-        logger.info(f"Request {request_id}: Selected model: {model_name}, model ID: {model_id}")
+        # Find the segment file
+        segment_filename = f"{segment_id}.wav"
+        segment_path = os.path.join(segments_dir, segment_filename)
         
-        # Read audio data
-        try:
-            with open(segment_path, 'rb') as f:
-                audio_data, sample_rate = read_audio_file_improved(f)
-        except Exception as e:
-            logger.exception(f"Request {request_id}: Failed to read segment audio: {str(e)}")
-            return jsonify({"error": f"Failed to read segment audio: {str(e)}"}), 500
+        if not os.path.exists(segment_path):
+            logger.error(f"Request {request_id}: Segment file not found: {segment_path}")
+            return jsonify({"error": f"Segment file not found: {segment_filename}"}), 404
+        
+        # Extract phoneme from segment_id
+        phoneme = extract_phoneme_from_filename(segment_filename)
+        if not phoneme:
+            return jsonify({"error": f"Could not extract phoneme from segment_id: {segment_id}"}), 400
+        
+        # Check if phoneme is supported
+        if phoneme not in PHONEME_MODEL_MAPPING:
+            return jsonify({"error": f"Unsupported phoneme: {phoneme}"}), 400
+        
+        # Get model ID
+        model_id = PHONEME_MODEL_MAPPING[phoneme].get(model_name)
+        if not model_id:
+            return jsonify({"error": f"No {model_name} model available for phoneme {phoneme}"}), 400
         
         # Load model
         model, processor = load_model(model_name, model_id)
         if model is None or processor is None:
-            logger.error(f"Request {request_id}: Failed to load {model_name} model")
-            return jsonify({"error": f"Failed to load {model_name} model"}), 500
+            return jsonify({"error": f"Failed to load model {model_id}"}), 500
         
-        # Predict
-        result = predict_audio(model, processor, audio_data, sample_rate, model_name, mapped_phoneme)
+        # Read and analyze audio
+        with open(segment_path, 'rb') as f:
+            audio_data, sample_rate = read_audio_file_improved(f)
+        
+        # Run prediction with segment flag
+        result = predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme, is_segment=True)
         
         # Add metadata
         result.update({
             "request_id": request_id,
-            "phoneme": phoneme,
-            "mapped_phoneme": mapped_phoneme,
             "segment_id": segment_id,
+            "phoneme": phoneme,
             "model_name": model_name,
             "model_id": model_id,
             "timestamp": datetime.now().isoformat()
@@ -861,6 +1073,76 @@ def analyze_segment():
         logger.exception("Unhandled error in analyze-segment endpoint")
         return jsonify({"error": str(e)}), 500
 
+def extract_phoneme_from_filename(filename):
+    """
+    Extract phoneme from segment filename
+    Expected format: input_X_phoneme.wav
+    """
+    try:
+        # Remove .wav extension
+        base_name = filename.replace('.wav', '')
+        
+        # Split by underscore
+        parts = base_name.split('_')
+        
+        # Expected format: ['input', 'X', 'phoneme', ...]
+        if len(parts) >= 3 and parts[0] == 'input':
+            # Join remaining parts (in case phoneme has underscores)
+            phoneme = '_'.join(parts[2:])
+            return phoneme
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error extracting phoneme from filename {filename}: {e}")
+        return None
+
+
+
+@app.route('/list-segments', methods=['GET'])
+def list_segments():
+    """
+    Helper endpoint to list all available segments
+    """
+    try:
+        segments_dir = os.path.join("server", "segments", "input")
+        
+        if not os.path.exists(segments_dir):
+            return jsonify({"error": f"Segments directory not found: {segments_dir}"}), 404
+        
+        files = [f for f in os.listdir(segments_dir) if f.endswith('.wav')]
+        files.sort()
+        
+        segments_info = []
+        for filename in files:
+            # Extract info from filename
+            base_name = filename.replace('.wav', '')
+            parts = base_name.split('_')
+            
+            segment_info = {
+                "filename": filename,
+                "segment_id": base_name,
+                "file_path": os.path.join(segments_dir, filename)
+            }
+            
+            if len(parts) >= 3:
+                segment_info["sequence_number"] = parts[1] if parts[1].isdigit() else "unknown"
+                segment_info["phoneme"] = '_'.join(parts[2:])
+            else:
+                segment_info["sequence_number"] = "unknown"
+                segment_info["phoneme"] = "unknown"
+            
+            segments_info.append(segment_info)
+        
+        return jsonify({
+            "segments_dir": segments_dir,
+            "total_segments": len(segments_info),
+            "segments": segments_info
+        })
+        
+    except Exception as e:
+        logger.exception("Error in list-segments endpoint")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/save-audio', methods=['POST'])
 def save_audio():
@@ -928,1087 +1210,3 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting server on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
-# from flask import Flask, request, jsonify 
-# from flask_cors import CORS 
-# import os
-# import torch
-# import numpy as np
-# import tempfile
-# import logging
-# import time
-# from datetime import datetime 
-# import wave
-# import io
-# import struct
-# import subprocess
-# import shutil
-# from transformers import AutoProcessor, AutoModelForAudioClassification, WhisperProcessor, WhisperModel 
-# # File: app.py (Add these endpoints to your Flask backend)
-# # Add these imports at the top of your file
-# # File: app.py (Add this new endpoint to your Flask backend)
-# # Add these imports if not already present
-
-# from werkzeug.utils import secure_filename
-
-# # Create an input directory for storing uploaded audio files
-# INPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'input')
-# os.makedirs(INPUT_DIR, exist_ok=True)
-
-# from segment_audio import run_segmentation_pipeline
-
-# # Add these new endpoints to your Flask application
-
-# # Configure logging
-# # logging.basicConfig(
-# #     level=logging.INFO,
-# #     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-# #     handlers=[
-# #         logging.FileHandler("server.log"),
-# #         logging.StreamHandler()
-# #     ]
-# # )
-# logger = logging.getLogger(__name__)
-
-# app = Flask(__name__)
-# CORS(app)  # Enable CORS for all routes
-
-# # Global variables to store models and processors
-# models = {}
-# processors = {}
-
-# # Configuration constants
-# MAX_AUDIO_LENGTH = 10  # seconds
-# SUPPORTED_AUDIO_FORMATS = ['.wav', '.mp3', '.ogg', '.webm']
-
-# # Define the mapping between phonemes and models
-# PHONEME_MODEL_MAPPING = {
-#     'ee': {
-#         'whisper': 'ahmad1703/whisper_ee', 
-#         'wave2vec': 'xxmoeedxx/wav2vec2_ee'
-#     },
-#     'so': {
-#         'whisper': 'ahmad1703/whisper_so',
-#         'wave2vec': 'xxmoeedxx/wav2vec2_so'
-#     },
-#     'si': {
-#         'whisper': 'ahmad1703/whisper_si',
-#         'wave2vec': 'xxmoeedxx/wav2vec2_si'
-#     },
-#     'aa':{
-#         'whisper': 'ahmad1703/whisper_aa',
-#         'wave2vec': 'xxmoeedxx/wav2vec2_aa'
-#     }
-# }
-
-# # Update the SUPPORTED_PHONEMES constant
-# SUPPORTED_PHONEMES = list(PHONEME_MODEL_MAPPING.keys())
-
-# # WhisperClassifier class definition
-# class WhisperClassifier(torch.nn.Module):
-#     def __init__(self, model_name="openai/whisper-small"):
-#         super(WhisperClassifier, self).__init__()
-#         self.whisper = WhisperModel.from_pretrained(model_name)
-#         self.fc = torch.nn.Linear(self.whisper.config.d_model, 1)
-#         self.sigmoid = torch.nn.Sigmoid()
-
-#     def forward(self, input_features):
-#         hidden_states = self.whisper.encoder(input_features).last_hidden_state
-#         pooled_output = hidden_states.mean(dim=1)
-#         logits = self.fc(pooled_output)
-#         return self.sigmoid(logits).squeeze(1)
-
-
-# def load_model(model_name, model_id=None, max_retries=2):
-#     """
-#     Load model and processor based on model name and ID.
-#     """
-#     # Define default model IDs if none provided
-#     default_model_ids = {
-#         "wave2vec": "xxmoeedxx/wav2vec2_si",
-#         "whisper": "ahmad1703/whisper_ee"
-#     }
-    
-#     # Use model_id if provided, otherwise use default
-#     actual_model_id = model_id if model_id else default_model_ids.get(model_name)
-#     cache_key = f"{model_name}_{actual_model_id}"
-    
-#     # Check if model is already loaded
-#     if cache_key in models and models[cache_key] is not None:
-#         logger.info(f"Using cached model: {cache_key}")
-#         return models[cache_key], processors[cache_key]
-    
-#     # Initialize placeholders in the cache to prevent concurrent loading attempts
-#     models[cache_key] = None
-#     processors[cache_key] = None
-    
-#     # Retry logic
-#     for attempt in range(max_retries + 1):
-#         try:
-#             print(actual_model_id)
-#             if model_name == "wave2vec":
-#                 logger.info(f"Loading Wave2Vec model (attempt {attempt+1}/{max_retries+1}): {actual_model_id}")
-                
-#                 # Load processor
-#                 processors[cache_key] = AutoProcessor.from_pretrained(
-#                     actual_model_id,
-#                     use_auth_token=os.environ.get("HF_TOKEN"),  # Add auth token if needed
-#                     cache_dir=os.environ.get("MODEL_CACHE_DIR")  # Optional cache directory
-#                 )
-                
-#                 # Load model
-#                 models[cache_key] = AutoModelForAudioClassification.from_pretrained(
-#                     actual_model_id,
-#                     use_auth_token=os.environ.get("HF_TOKEN"),
-#                     cache_dir=os.environ.get("MODEL_CACHE_DIR")
-#                 )
-                
-#                 # Move model to GPU if available
-#                 if torch.cuda.is_available():
-#                     models[cache_key] = models[cache_key].to("cuda")
-#                     logger.info(f"Wave2Vec model {actual_model_id} moved to GPU")
-                
-#                 # Set model to evaluation mode
-#                 models[cache_key].eval()
-#                 logger.info(f"Wave2Vec model {actual_model_id} loaded successfully")
-                
-#                 # Return successfully loaded model and processor
-#                 return models[cache_key], processors[cache_key]
-                
-#             elif model_name == "whisper":
-#                 logger.info(f"Loading Whisper classifier model (attempt {attempt+1}/{max_retries+1}): {actual_model_id}")
-                
-#                 # Load processor
-#                 processors[cache_key] = WhisperProcessor.from_pretrained(
-#                     actual_model_id,
-#                     use_auth_token=os.environ.get("HF_TOKEN"),
-#                     cache_dir=os.environ.get("MODEL_CACHE_DIR")
-#                 )
-                
-#                 # Load model
-#                 models[cache_key] = WhisperClassifier()
-                
-#                 # Load weights
-#                 try:
-#                     print(actual_model_id)
-#                     # First try to load from Hugging Face
-#                     hf_url = f"https://huggingface.co/{actual_model_id}/resolve/main/pytorch_model.bin"
-#                     logger.info(f"Attempting to download model weights from: {hf_url}")
-                    
-#                     models[cache_key].load_state_dict(torch.hub.load_state_dict_from_url(
-#                         hf_url,
-#                         map_location=torch.device('cpu'),
-#                         progress=True
-#                     ))
-#                     logger.info(f"Loaded Whisper model weights from Hugging Face: {actual_model_id}")
-                    
-#                 except Exception as e:
-#                     logger.warning(f"Could not load from HF directly: {e}")
-#                     # Fallback to local path if available
-#                     model_filename = actual_model_id.split('/')[-1]
-#                     local_paths = [
-#                         os.environ.get(f"WHISPER_MODEL_PATH_{actual_model_id.replace('/', '_')}", ""),
-#                         os.path.join("models", f"{model_filename}.pth"),
-#                         os.path.join("models", f"whis_{model_filename.split('_')[-1]}.pth")
-#                     ]
-                    
-#                     loaded = False
-#                     for local_path in local_paths:
-#                         if local_path and os.path.exists(local_path):
-#                             models[cache_key].load_state_dict(torch.load(local_path, map_location=torch.device('cpu')))
-#                             logger.info(f"Loaded Whisper model weights from local path: {local_path}")
-#                             loaded = True
-#                             break
-                    
-#                     if not loaded:
-#                         available_paths = ', '.join([p for p in local_paths if p])
-#                         logger.error(f"Could not find local model at {available_paths}")
-#                         # Clear cache entries on failure
-#                         models.pop(cache_key, None)
-#                         processors.pop(cache_key, None)
-#                         return None, None
-                
-#                 # Move model to GPU if available
-#                 if torch.cuda.is_available():
-#                     models[cache_key] = models[cache_key].to("cuda")
-#                     logger.info(f"Whisper model {actual_model_id} moved to GPU")
-                
-#                 # Set model to evaluation mode
-#                 models[cache_key].eval()
-#                 logger.info(f"Whisper model {actual_model_id} loaded successfully")
-                
-#                 # Return successfully loaded model and processor
-#                 return models[cache_key], processors[cache_key]
-            
-#             else:
-#                 logger.error(f"Unknown model type: {model_name}")
-#                 # Clear cache entries on failure
-#                 models.pop(cache_key, None)
-#                 processors.pop(cache_key, None)
-#                 return None, None
-                
-#         except Exception as e:
-#             logger.error(f"Error loading {model_name} model (attempt {attempt+1}/{max_retries+1}): {e}")
-            
-#             # Last attempt failed
-#             if attempt == max_retries:
-#                 logger.error(f"Failed to load {model_name} model after {max_retries+1} attempts")
-#                 # Clear cache entries on ultimate failure
-#                 models.pop(cache_key, None)
-#                 processors.pop(cache_key, None)
-#                 return None, None
-            
-#             # Wait before retrying with exponential backoff
-#             wait_time = 2 ** attempt  # 1, 2, 4, 8, ... seconds
-#             logger.info(f"Waiting {wait_time} seconds before retrying...")
-#             time.sleep(wait_time)
-
-
-# import io
-# import wave
-# import numpy as np
-# import tempfile
-# import os
-# import logging
-# from pydub import AudioSegment  # Requires ffmpeg to be installed
-
-# logger = logging.getLogger(__name__)
-
-# def read_audio_from_file(file_or_bytes):
-#     """
-#     Robust audio file reader that handles multiple formats and converts to standard WAV.
-#     """
-#     # Get bytes from file object if needed
-#     if hasattr(file_or_bytes, 'read'):
-#         logger.info("Reading as file-like object")
-#         audio_bytes = file_or_bytes.read()
-#     else:
-#         audio_bytes = file_or_bytes
-    
-#     # First try with pydub which handles multiple formats
-#     try:
-#         logger.info("Trying to read with pydub (supports multiple formats)")
-        
-#         # Write to temp file
-#         with tempfile.NamedTemporaryFile(suffix='.audio', delete=False) as temp_file:
-#             temp_path = temp_file.name
-#             temp_file.write(audio_bytes)
-        
-#         try:
-#             # Load with pydub (auto-detects format)
-#             audio = AudioSegment.from_file(temp_path)
-            
-#             # Convert to standard format: mono, 16kHz, 16-bit PCM
-#             audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
-            
-#             # Convert to numpy array
-#             samples = np.array(audio.get_array_of_samples())
-#             sample_rate = audio.frame_rate
-            
-#             # Normalize to [-1, 1] range
-#             data = samples.astype(np.float32) / 32768.0
-#             data = np.clip(data, -1.0, 1.0)
-            
-#             logger.info(f"Successfully read with pydub: shape={data.shape}, sample_rate={sample_rate}")
-#             return data, sample_rate
-#         finally:
-#             # Clean up temp file
-#             try:
-#                 os.unlink(temp_path)
-#             except:
-#                 pass
-#     except Exception as e:
-#         logger.warning(f"Pydub failed: {str(e)}")
-    
-#     # Fallback to original WAV parsing (for cases where pydub isn't available)
-#     try:
-#         logger.info("Falling back to WAV parsing")
-#         with io.BytesIO(audio_bytes) as buf:
-#             with wave.open(buf, 'rb') as wav_file:
-#                 sample_rate = wav_file.getframerate()
-#                 n_channels = wav_file.getnchannels()
-#                 sample_width = wav_file.getsampwidth()
-#                 n_frames = wav_file.getnframes()
-                
-#                 frames = wav_file.readframes(n_frames)
-                
-#                 if sample_width == 1:
-#                     data = np.frombuffer(frames, dtype=np.uint8).astype(np.float32) / 128.0 - 1.0
-#                 elif sample_width == 2:
-#                     data = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
-#                 elif sample_width == 4:
-#                     data = np.frombuffer(frames, dtype=np.int32).astype(np.float32) / 2147483648.0
-#                 else:
-#                     raise ValueError(f"Unsupported sample width: {sample_width}")
-                
-#                 if n_channels == 2:
-#                     data = data.reshape(-1, 2).mean(axis=1)
-                
-#                 data = np.clip(data, -1.0, 1.0)
-#                 return data, sample_rate
-#     except Exception as e:
-#         logger.warning(f"Wave module failed: {str(e)}")
-    
-#     # Final fallback - return silence
-#     logger.warning("All methods failed - returning silence")
-#     sample_rate = 16000
-#     duration = 1.0
-#     data = np.zeros(int(sample_rate * duration), dtype=np.float32)
-#     return data, sample_rate
-
-# def resample_audio(audio_data, orig_sample_rate, target_sample_rate=16000):
-#     """
-#     Resample audio to target sample rate.
-#     """
-#     if orig_sample_rate == target_sample_rate:
-#         return audio_data
-    
-#     logger.info(f"Resampling from {orig_sample_rate}Hz to {target_sample_rate}Hz")
-    
-#     # Simple linear resampling using numpy
-#     orig_length = len(audio_data)
-#     new_length = int(orig_length * target_sample_rate / orig_sample_rate)
-    
-#     logger.info(f"Resampling from {orig_length} samples to {new_length} samples")
-    
-#     # Create time points for interpolation
-#     orig_times = np.linspace(0, 1, orig_length)
-#     new_times = np.linspace(0, 1, new_length)
-    
-#     # Interpolate
-#     resampled_audio = np.interp(new_times, orig_times, audio_data)
-    
-#     logger.info(f"Resampled audio shape: {resampled_audio.shape}")
-    
-#     return resampled_audio
-
-
-# def preprocess_audio(audio_data, sample_rate):
-#     """
-#     Preprocess audio data for model input.
-#     """
-#     # Make sure data is float32
-#     audio_data = audio_data.astype(np.float32)
-    
-#     # Check for NaN or Inf values
-#     if np.isnan(audio_data).any() or np.isinf(audio_data).any():
-#         logger.warning("Found NaN or Inf values in audio data. Replacing with zeros.")
-#         audio_data = np.nan_to_num(audio_data)
-    
-#     # Ensure audio is in range [-1, 1]
-#     max_val = np.max(np.abs(audio_data))
-#     if max_val > 0:
-#         audio_data = audio_data / max_val
-    
-#     # Make sure audio has enough samples (pad if needed)
-#     min_samples = int(0.5 * sample_rate)  # At least 0.5 second
-#     if len(audio_data) < min_samples:
-#         logger.info(f"Audio too short ({len(audio_data)} samples), padding to {min_samples} samples")
-#         pad_length = min_samples - len(audio_data)
-#         audio_data = np.pad(audio_data, (0, pad_length), mode='constant')
-    
-#     return audio_data
-
-
-# def predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme=None):
-#     """
-#     Process audio and make a prediction.
-#     """
-#     try:
-#         start_time = time.time()
-#         logger.info(f"Processing audio with phoneme: {phoneme}")
-#         # Check audio length
-#         audio_length = len(audio_data) / sample_rate
-#         logger.info(f"Audio length: {audio_length:.2f} seconds")
-#         if audio_length > MAX_AUDIO_LENGTH:
-#             return {
-#                 "error": f"Audio is too long. Maximum allowed length is {MAX_AUDIO_LENGTH} seconds.",
-#                 "audio_length": audio_length
-#             }
-        
-#         # Resample to 16,000 Hz if necessary
-#         if sample_rate != 16000:
-#             audio_data = resample_audio(audio_data, sample_rate, 16000)
-#             sample_rate = 16000
-        
-#         # Preprocess audio data
-#         audio_data = preprocess_audio(audio_data, sample_rate)
-        
-#         if model_name == "wave2vec":
-#             # Process input
-#             logger.info("Processing audio with Wave2Vec model")
-#             try:
-#                 # Safely process input
-#                 inputs = processor(audio_data, sampling_rate=16000, return_tensors="pt", padding=True)
-                
-#                 # Move to correct device
-#                 device = "cuda" if torch.cuda.is_available() else "cpu"
-#                 logger.info(f"Using device: {device}")
-                
-#                 for key in inputs:
-#                     if torch.is_tensor(inputs[key]):
-#                         inputs[key] = inputs[key].to(device)
-                
-#                 # Predict with error handling
-#                 with torch.no_grad():
-#                     outputs = model(inputs["input_values"])
-#                     logits = outputs.logits
-                    
-#                     # Check for NaN values
-#                     if torch.isnan(logits).any() or torch.isinf(logits).any():
-#                         logger.warning("Found NaN or Inf in model output. Using fallback prediction.")
-#                         prediction = 0  # Default to "incorrect" as fallback
-#                         confidence = 50.0  # Default 50% confidence
-#                     else:
-#                         # Apply softmax
-#                         probs = torch.nn.functional.softmax(logits, dim=-1)
-#                         prediction = torch.argmax(probs, dim=-1).item()
-#                         confidence = probs[0][prediction].item() * 100
-                        
-#                         # Sanity check on confidence
-#                         if np.isnan(confidence) or np.isinf(confidence):
-#                             logger.warning("NaN or Inf in confidence score. Using default.")
-#                             confidence = 50.0
-#             except Exception as e:
-#                 logger.exception(f"Error during model inference: {str(e)}")
-#                 prediction = 0  # Default to "incorrect" as fallback
-#                 confidence = 50.0  # Default 50% confidence
-            
-#             logger.info(f"Prediction: {prediction}, Confidence: {confidence:.2f}%")
-            
-#             # Get detailed feedback based on phoneme
-#             feedback = get_detailed_feedback(phoneme, prediction, confidence)
-            
-#             # Return result
-#             result = {
-#                 "correct": bool(prediction),  # 0 (incorrect) or 1 (correct)
-#                 "confidence": round(confidence, 2),
-#                 "recommendation": feedback,
-#                 "processing_time": round(time.time() - start_time, 3)
-#             }
-#             return result
-            
-#         elif model_name == "whisper":
-#             # Process audio with Whisper model
-#             logger.info("Processing audio with Whisper model")
-#             try:
-#                 # Process input features
-#                 inputs = processor(audio_data, return_tensors="pt", sampling_rate=16000).input_features
-                
-#                 # Move to correct device
-#                 device = "cuda" if torch.cuda.is_available() else "cpu"
-#                 logger.info(f"Using device: {device}")
-#                 inputs = inputs.to(device)
-                
-#                 # Make prediction with error handling
-#                 with torch.no_grad():
-#                     # Get output probability
-#                     output = model(inputs)
-                    
-#                     # Check for NaN values
-#                     if torch.isnan(output).any() or torch.isinf(output).any():
-#                         logger.warning("Found NaN or Inf in model output. Using fallback prediction.")
-#                         prediction = 0  # Default to "incorrect" as fallback
-#                         confidence = 50.0  # Default 50% confidence
-#                     else:
-#                         # Get prediction and confidence
-#                         probability = output.item()  # Sigmoid output is between 0 and 1
-#                         prediction = 1 if probability > 0.5 else 0  # Convert to binary
-#                         confidence = probability * 100 if prediction == 1 else (1 - probability) * 100
-                        
-#                         # Sanity check on confidence
-#                         if np.isnan(confidence) or np.isinf(confidence):
-#                             logger.warning("NaN or Inf in confidence score. Using default.")
-#                             confidence = 50.0
-#             except Exception as e:
-#                 logger.exception(f"Error during Whisper model inference: {str(e)}")
-#                 prediction = 0  # Default to "incorrect" as fallback
-#                 confidence = 50.0  # Default 50% confidence
-            
-#             logger.info(f"Whisper Prediction: {prediction}, Confidence: {confidence:.2f}%")
-            
-#             # Get detailed feedback based on phoneme
-#             feedback = get_detailed_feedback(phoneme, prediction, confidence)
-            
-#             # Return result
-#             result = {
-#                 "correct": bool(prediction),  # 0 (incorrect) or 1 (correct)
-#                 "confidence": round(confidence, 2),
-#                 "recommendation": feedback,
-#                 "processing_time": round(time.time() - start_time, 3),
-#                 "model_used": "whisper"
-#             }
-#             return result
-        
-#         else:
-#             return {"error": f"Unknown model: {model_name}"}
-            
-#     except Exception as e:
-#         logger.exception("Error processing audio data")
-#         return {"error": str(e)}
-
-
-# def get_detailed_feedback(phoneme, prediction, confidence):
-#     """
-#     Generate detailed feedback based on prediction and confidence.
-#     """
-#     phoneme_display = phoneme if phoneme else "this sound"
-    
-#     if prediction == 1:
-#         if confidence > 90:
-#             return f"Excellent! Your pronunciation of '{phoneme_display}' is very accurate."
-#         elif confidence > 75:
-#             return f"Good job! Your pronunciation of '{phoneme_display}' is correct, but could be slightly improved."
-#         else:
-#             return f"Your pronunciation of '{phoneme_display}' is acceptable, but needs more practice for clarity."
-#     else:
-#         if confidence > 90:
-#             return f"Your pronunciation of '{phoneme_display}' needs significant improvement. Please listen to the reference audio again."
-#         elif confidence > 75:
-#             return f"Your pronunciation of '{phoneme_display}' has some issues. Try focusing on the correct articulation point."
-#         else:
-#             return f"Your pronunciation of '{phoneme_display}' needs work, but is not far off. Keep practicing!"
-
-
-# def validate_request(request):
-#     """
-#     Validate the incoming request.
-#     """
-#     # Check if audio file is present
-#     if 'audio' not in request.files:
-#         return False, "No audio file provided"
-    
-#     audio_file = request.files['audio']
-    
-#     # Check if filename exists and has a valid extension
-#     if not audio_file.filename:
-#         # Some browsers/frameworks may not send filename for recorded audio
-#         # We'll allow this and assume it's a valid format
-#         logger.warning("No filename provided for audio file. Assuming valid format.")
-#     else:
-#         # Check file extension if filename is provided
-#         file_ext = os.path.splitext(audio_file.filename)[1].lower()
-#         if file_ext and file_ext not in SUPPORTED_AUDIO_FORMATS:
-#             return False, f"Unsupported audio format: {file_ext}. Please use one of: {', '.join(SUPPORTED_AUDIO_FORMATS)}"
-    
-#     # Check if model is specified and valid
-#     model_name = request.form.get('model', 'wave2vec')
-#     if model_name not in ['whisper', 'wave2vec']:
-#         return False, f"Invalid model specified: {model_name}. Use 'whisper' or 'wave2vec'."
-    
-#     # Check if phoneme is valid (if specified)
-#     phoneme = request.form.get('phoneme', '')
-#     if phoneme and phoneme not in SUPPORTED_PHONEMES:
-#         return False, f"Unsupported phoneme: {phoneme}. Please use one of: {', '.join(SUPPORTED_PHONEMES)}"
-    
-#     # Validate model_id if provided (simple validation for format)
-#     model_id = request.form.get('model_id', '')
-#     if model_id and not (
-#         '/' in model_id and  # Must contain a slash for username/model_name format
-#         len(model_id.split('/')) == 2 and  # Must have exactly one slash
-#         all(part for part in model_id.split('/'))  # Both parts must be non-empty
-#     ):
-#         return False, f"Invalid model_id format: {model_id}. Expected format: 'username/model_name'"
-    
-#     return True, ""
-
-
-# @app.route('/analyze-tajweed', methods=['POST'])
-# def analyze_tajweed():
-#     """
-#     Main endpoint for analyzing tajweed pronunciation.
-#     """
-#     print("analyzing")
-#     try:
-#         # Log request
-#         request_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(4).hex()}"
-#         logger.info(f"Request {request_id}: Received analyze-tajweed request")
-        
-#         # Validate request
-#         is_valid, error_message = validate_request(request)
-#         if not is_valid:
-#             logger.warning(f"Request {request_id}: Validation failed - {error_message}")
-#             return jsonify({"error": error_message}), 400
-        
-#         # Extract parameters
-#         audio_file = request.files['audio']
-#         model_name = request.form.get('model', 'wave2vec')
-#         phoneme = request.form.get('phoneme', '')
-#         model_id = request.form.get('model_id', '')
-        
-#         logger.info(f"Request {request_id}: Processing audio with {model_name} model, phoneme: '{phoneme}', model_id: '{model_id}'")
-#         logger.info(f"Audio file: {audio_file.filename if audio_file.filename else 'No filename'}, "
-#                    f"Content type: {audio_file.content_type}")
-        
-#         try:
-#             # Read audio data directly from the request
-#             audio_data, sample_rate = read_audio_from_file(audio_file)
-#         except Exception as e:
-#             logger.exception(f"Request {request_id}: Failed to read audio data")
-#             return jsonify({"error": f"Failed to read audio data: {str(e)}"}), 400
-        
-#         # Load appropriate model
-#         model, processor = load_model(model_name, model_id)
-#         if model is None or processor is None:
-#             logger.error(f"Request {request_id}: Failed to load {model_name} model (ID: {model_id})")
-#             return jsonify({"error": f"Failed to load {model_name} model"}), 500
-        
-#         # Predict pronunciation
-#         result = predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme)
-        
-#         # Add request metadata
-#         result["request_id"] = request_id
-#         if phoneme:
-#             result["phoneme"] = phoneme
-#         result["timestamp"] = datetime.now().isoformat()
-#         result["model_id"] = model_id if model_id else f"default_{model_name}"
-        
-#         # Log result summary
-#         if "error" in result:
-#             logger.warning(f"Request {request_id}: Error in processing - {result['error']}")
-#         else:
-#             logger.info(f"Request {request_id}: Analysis complete - "
-#                       f"Pronunciation {'correct' if result.get('correct', False) else 'incorrect'} "
-#                       f"with {result.get('confidence', 0):.2f}% confidence")
-
-#         return jsonify(result)
-
-#     except Exception as e:
-#         logger.exception("Unhandled error in analyze_tajweed endpoint")
-#         return jsonify({"error": str(e)}), 500
-
-
-# @app.route('/health', methods=['GET'])
-# def health_check():
-#     """
-#     Health check endpoint
-#     """
-#     return jsonify({
-#         "status": "ok",
-#         "timestamp": datetime.now().isoformat(),
-#         "models_loaded": list(models.keys())
-#     })
-
-
-# @app.route('/models', methods=['GET'])
-# def list_models():
-#     """
-#     List available models and their status
-#     """
-#     # Check which models are already loaded
-#     loaded_models = {}
-#     for key in models:
-#         if '_' in key:
-#             model_type, model_id = key.split('_', 1)
-#             if model_type not in loaded_models:
-#                 loaded_models[model_type] = []
-#             loaded_models[model_type].append(model_id)
-
-#     return jsonify({
-#         "available_models": {
-#             "wave2vec": "wave2vec" in loaded_models,
-#             "whisper": "whisper" in loaded_models
-#         },
-#         "supported_phonemes": SUPPORTED_PHONEMES,
-#         "phoneme_model_mapping": PHONEME_MODEL_MAPPING,
-#         "loaded_models": loaded_models
-#     })
-
-
-# @app.route('/status', methods=['GET'])
-# def model_status():
-#     """
-#     Endpoint to check the loading status of all models
-#     """
-#     # print("im here")
-#     # Calculate loading progress
-#     total_models = 0
-#     loaded_models = 0
-#     model_status = {}
-
-#     for phoneme, model_types in PHONEME_MODEL_MAPPING.items():
-#         for model_type, model_id in model_types.items():
-#             total_models += 1
-#             cache_key = f"{model_type}_{model_id}"
-
-#             is_loaded = cache_key in models and models[cache_key] is not None
-#             model_status[cache_key] = {
-#                 "loaded": is_loaded,
-#                 "phoneme": phoneme,
-#                 "model_type": model_type,
-#                 "model_id": model_id
-#             }
-
-#             if is_loaded:
-#                 loaded_models += 1
-
-#     # Calculate loading percentage
-#     loading_percentage = (loaded_models / total_models * 100) if total_models > 0 else 0
-
-#     # Get GPU usage if available
-#     gpu_info = {}
-#     if torch.cuda.is_available():
-#         try:
-#             gpu_info = {
-#                 "device_count": torch.cuda.device_count(),
-#                 "current_device": torch.cuda.current_device(),
-#                 "device_name": torch.cuda.get_device_name(0),
-#                 "memory_allocated": f"{torch.cuda.memory_allocated(0) / 1024**3:.2f} GB",
-#                 "memory_reserved": f"{torch.cuda.memory_reserved(0) / 1024**3:.2f} GB",
-#             }
-#         except Exception as e:
-#             logger.error(f"Error getting GPU info: {e}")
-#             gpu_info = {"error": str(e)}
-
-#     return jsonify({
-#         "status": "loading" if loading_percentage < 100 else "ready",
-#         "loading_progress": {
-#             "total_models": total_models,
-#             "loaded_models": loaded_models,
-#             "percentage": round(loading_percentage, 1)
-#         },
-#         "model_status": model_status,
-#         "gpu_info": gpu_info,
-#         "server_time": datetime.now().isoformat()
-#     })
-# def preload_all_models():
-#     """
-#     Preload all models when the server starts
-#     """
-#     logger.info("Preloading all models...")
-
-#     # Preload all models based on PHONEME_MODEL_MAPPING
-#     for phoneme, model_types in PHONEME_MODEL_MAPPING.items():
-#         for model_type, model_id in model_types.items():
-#             try:
-#                 logger.info(f"Preloading {model_type} model for phoneme '{phoneme}': {model_id}")
-#                 model, processor = load_model(model_type, model_id)
-#                 if model and processor:
-#                     logger.info(f"Successfully preloaded {model_type} model for phoneme '{phoneme}'")
-#                 else:
-#                     logger.error(f"Failed to preload {model_type} model for phoneme '{phoneme}'")
-#             except Exception as e:
-#                 logger.exception(f"Error preloading {model_type} model for phoneme '{phoneme}': {e}")
-
-# @app.route('/segment-audio', methods=['POST'])
-# def segment_audio():
-#     """
-#     Endpoint to segment an audio file using the Docker pipeline
-#     """
-#     try:
-#         # Log request
-#         request_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(4).hex()}"
-#         logger.info(f"Request {request_id}: Received segment-audio request")
-        
-#         # Check if audio file is present
-#         if 'audio' not in request.files:
-#             logger.warning(f"Request {request_id}: No audio file provided")
-#             return jsonify({"error": "No audio file provided"}), 400
-        
-#         # Get audio file
-#         audio_file = request.files['audio']
-        
-#         # Check if letter is specified
-#         letter = request.form.get('letter', '')
-#         if not letter:
-#             logger.warning(f"Request {request_id}: No letter specified")
-#             return jsonify({"error": "Please specify a letter name"}), 400
-        
-#         # Get model type (optional, for future use)
-#         model_name = request.form.get('model', 'whisper')
-#         logger.info(f"Request {request_id}: Using model type: {model_name}")
-        
-#         # Save audio file to temporary location
-#         temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-#         temp_file_path = temp_file.name
-#         temp_file.close()
-        
-#         try:
-#             audio_file.save(temp_file_path)
-#             logger.info(f"Request {request_id}: Saved audio file to {temp_file_path}")
-            
-#             # Run segmentation pipeline
-#             result = run_segmentation_pipeline(temp_file_path, letter)
-            
-#             if not result["success"]:
-#                 logger.error(f"Request {request_id}: Segmentation failed - {result.get('error', 'Unknown error')}")
-#                 return jsonify({"error": result.get('error', 'Segmentation failed')}), 500
-            
-#             # Process the segmented files and prepare response
-#             segments_data = []
-            
-#             for segment in result.get('segments', []):
-#                 # Create a unique identifier for this segment
-#                 segment_id = f"{letter}_{segment['phoneme']}_{os.urandom(4).hex()}"
-                
-#                 # Copy the segment file to a location that the web server can access
-#                 segment_path = segment['path']
-#                 web_accessible_path = os.path.join('static', 'segments', f"{segment_id}.wav")
-#                 os.makedirs(os.path.dirname(os.path.join(app.root_path, web_accessible_path)), exist_ok=True)
-                
-#                 try:
-#                     shutil.copy(segment_path, os.path.join(app.root_path, web_accessible_path))
-#                     # Create URL for the segment
-#                     segment_url = f"/static/segments/{segment_id}.wav"
-                    
-#                     segments_data.append({
-#                         "phoneme": segment['phoneme'],
-#                         "url": segment_url,
-#                         "segment_id": segment_id,
-#                         "original_filename": segment['filename']
-#                     })
-#                 except Exception as e:
-#                     logger.exception(f"Error copying segment file: {str(e)}")
-            
-#             # Create response
-#             response = {
-#                 "success": True,
-#                 "letter": letter,
-#                 "model": model_name,  # Include selected model in the response
-#                 "segments": segments_data
-#             }
-            
-#             logger.info(f"Request {request_id}: Segmentation completed successfully with {len(segments_data)} segments")
-#             return jsonify(response)
-            
-#         finally:
-#             # Clean up temporary input file
-#             try:
-#                 os.unlink(temp_file_path)
-#             except:
-#                 pass
-                
-#     except Exception as e:
-#         logger.exception(f"Unhandled error in segment-audio endpoint")
-#         return jsonify({"error": str(e)}), 500
-
-
-# @app.route('/analyze-segment', methods=['POST'])
-# def analyze_segment():
-#     """
-#     Endpoint to analyze a single segmented phoneme
-#     """
-#     try:
-#         # Log request
-#         request_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(4).hex()}"
-#         logger.info(f"Request {request_id}: Received analyze-segment request")
-        
-#         # Check if segment ID is provided
-#         segment_id = request.form.get('segment_id', '')
-#         if not segment_id:
-#             return jsonify({"error": "No segment ID provided"}), 400
-        
-#         # Get the segment file path - try multiple possible locations
-#         segment_path = os.path.join(app.root_path, 'static', 'segments', f"{segment_id}.wav")
-        
-#         if not os.path.exists(segment_path):
-#             # Try alternate location (segments directory in app root)
-#             segments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'segments')
-#             alternate_path = os.path.join(segments_dir, f"{segment_id}.wav")
-            
-#             if os.path.exists(alternate_path):
-#                 segment_path = alternate_path
-#             elif '.' not in segment_id:
-#                 # Try using segment_id as a full filename if it doesn't contain an extension
-#                 full_filename_path = os.path.join(segments_dir, segment_id)
-#                 if os.path.exists(full_filename_path):
-#                     segment_path = full_filename_path
-            
-#             if not os.path.exists(segment_path):
-#                 logger.warning(f"Request {request_id}: Segment file not found at any expected location")
-#                 return jsonify({"error": "Segment file not found"}), 404
-        
-#         logger.info(f"Request {request_id}: Found segment file at {segment_path}")
-        
-#         # Get phoneme
-#         phoneme = request.form.get('phoneme', '')
-#         if not phoneme:
-#             logger.warning(f"Request {request_id}: No phoneme specified")
-#             return jsonify({"error": "Please specify a phoneme"}), 400
-        
-#         # Get model type
-#         model_name = request.form.get('model', 'whisper')
-#         if model_name not in ['whisper', 'wave2vec']:
-#             logger.warning(f"Request {request_id}: Invalid model type: {model_name}")
-#             return jsonify({"error": "Invalid model type. Use 'whisper' or 'wave2vec'"}), 400
-        
-#         # Enhanced phoneme mapping to support all phonemes in the Arabic alphabet
-#         phoneme_mapping = {
-#             # Currently directly supported phonemes
-#             'ee': 'ee',  # as in "jeem", "seen", "meem"
-#             'so': 'so',  # (assuming this is a specific sound)
-#             'si': 'si',  # (assuming this is a specific sound)
-            
-#             # Arabic phonemes mapping to closest supported phoneme
-#             'aa': 'aa',   # ا - alif
-#             'b': 'ee',   # ب - ba
-#             't': 'ee',   # ت - ta
-#             's': 'ee',   # ث - sa/tha or س - seen
-#             'j': 'ee',   # ج - jeem (contains 'ee')
-#             'h': 'ee',   # ه - haa
-#             'hh': 'ee',  # ح - hha
-#             'kh': 'ee',  # خ - kha
-#             'd': 'ee',   # د - daal
-#             'zh': 'ee',  # ذ - zhaal/thal
-#             'r': 'ee',   # ر - raa
-#             'z': 'ee',   # ز - zaa
-#             'sh': 'ee',  # ش - sheen (contains 'ee')
-#             'aa': 'ee',  # Long vowel sound
-#             'du': 'so',  # ض - duad/daad
-#             'tu': 'so',  # ط - tua
-#             'zu': 'so',  # ظ - zua
-#             'n': 'ee',   # ن - noon
-#             'f': 'ee',   # ف - faa
-#             'qa': 'so',  # ق - qaaf
-#             'ka': 'ee',  # ك - kaaf
-#             'l': 'ee',   # ل - laam
-#             'm': 'ee',   # م - meem (contains 'ee')
-#             'wa': 'ee',  # و - wao
-#             'y': 'ee',   # ي - yaa
-#             'gh': 'so',  # غ - ghain
-#             'o': 'so',   # Short vowel
-#             'i': 'ee',   # Short vowel
-#             'oo': 'so',  # Long vowel
-#             'u': 'so',   # Short vowel
-#         }
-        
-#         # Get mapped phoneme for analysis
-#         mapped_phoneme = phoneme_mapping.get(phoneme.lower(), '')
-#         logger.info(f"Request {request_id}: Mapping phoneme '{phoneme}' to '{mapped_phoneme}'")
-        
-#         if not mapped_phoneme:
-#             logger.warning(f"Request {request_id}: Unsupported phoneme: {phoneme}")
-#             return jsonify({
-#                 "error": f"Unsupported phoneme: {phoneme}. Please use one of the supported phonemes."
-#             }), 400
-        
-#         # Determine the model ID based on the phoneme and model type
-#         model_id = None
-        
-#         # Lookup in PHONEME_MODEL_MAPPING to find the right model ID
-#         for letter_phonemes, models in PHONEME_MODEL_MAPPING.items():
-#             if mapped_phoneme in letter_phonemes:
-#                 if model_name in models:
-#                     model_id = models[model_name]
-#                     break
-        
-#         # If no specific model found, use a default model for the selected type
-#         if not model_id:
-#             if mapped_phoneme == 'ee':
-#                 model_id = PHONEME_MODEL_MAPPING['ee'][model_name]
-#             elif mapped_phoneme == 'so':
-#                 model_id = PHONEME_MODEL_MAPPING['so'][model_name]
-#             elif mapped_phoneme == 'si':
-#                 model_id = PHONEME_MODEL_MAPPING['si'][model_name]
-#             else:
-#                 # Fallback to phonetically similar model
-#                 if mapped_phoneme in ['a', 'aa', 'i', 'ee', 'y']:
-#                     model_id = PHONEME_MODEL_MAPPING['ee'][model_name]
-#                 else:
-#                     model_id = PHONEME_MODEL_MAPPING['so'][model_name]
-        
-#         logger.info(f"Request {request_id}: Selected model: {model_name}, model ID: {model_id}")
-        
-#         # Read audio data
-#         try:
-#             with open(segment_path, 'rb') as f:
-#                 audio_data, sample_rate = read_audio_from_file(f)
-#         except Exception as e:
-#             logger.exception(f"Request {request_id}: Failed to read segment audio data: {str(e)}")
-#             return jsonify({"error": f"Failed to read segment audio data: {str(e)}"}), 500
-        
-#         # Load the appropriate model
-#         print(model_id,model_name)
-#         model, processor = load_model(model_name, model_id)
-#         if model is None or processor is None:
-#             logger.error(f"Request {request_id}: Failed to load {model_name} model (ID: {model_id})")
-#             return jsonify({"error": f"Failed to load {model_name} model"}), 500
-        
-#         # Predict pronunciation
-#         result = predict_audio(model, processor, audio_data, sample_rate, model_name, mapped_phoneme)
-        
-#         # Add request metadata
-#         result["request_id"] = request_id
-#         result["phoneme"] = phoneme
-#         result["mapped_phoneme"] = mapped_phoneme
-#         result["segment_id"] = segment_id
-#         result["segment_path"] = segment_path
-#         result["model_name"] = model_name
-#         result["model_id"] = model_id
-#         result["timestamp"] = datetime.now().isoformat()
-        
-#         return jsonify(result)
-        
-#     except Exception as e:
-#         logger.exception("Unhandled error in analyze-segment endpoint")
-#         return jsonify({"error": str(e)}), 500
-
-# # Corrected save-audio endpoint
-# @app.route('/save-audio', methods=['POST'])
-# def save_audio():
-#     """
-#     Endpoint to save audio file to the input directory
-#     """
-#     try:
-#         # Log request
-#         request_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{os.urandom(4).hex()}"
-#         logger.info(f"Request {request_id}: Received save-audio request")
-        
-#         # Check if audio file is present
-#         if 'audio' not in request.files:
-#             logger.warning(f"Request {request_id}: No audio file provided")
-#             return jsonify({"error": "No audio file provided"}), 400
-        
-#         # Get audio file
-#         audio_file = request.files['audio']
-        
-#         # Check if letter name is provided
-#         letter = request.form.get('letter', '')
-#         if not letter:
-#             logger.warning(f"Request {request_id}: No letter specified")
-#             return jsonify({"error": "Please specify a letter name"}), 400
-        
-#         # Generate a unique filename based on letter and timestamp
-#         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-#         filename = f"input.wav"
-#         filepath = os.path.join(INPUT_DIR, filename)
-        
-#         # Check content type and set appropriate handling
-#         content_type = audio_file.content_type
-#         logger.info(f"Request {request_id}: Audio file content type: {content_type}")
-        
-#         # Save the file
-#         audio_file.save(filepath)
-#         logger.info(f"Request {request_id}: Saved audio file to {filepath}")
-        
-#         # Verify the saved file is a valid WAV file
-#         try:
-#             with wave.open(filepath, 'rb') as wav_check:
-#                 sample_rate = wav_check.getframerate()
-#                 n_channels = wav_check.getnchannels()
-#                 n_frames = wav_check.getnframes()
-#                 logger.info(f"Request {request_id}: Verified WAV file: {sample_rate}Hz, {n_channels} channels, {n_frames} frames")
-#         except Exception as wav_error:
-#             logger.warning(f"Request {request_id}: Saved file is not a valid WAV file: {str(wav_error)}")
-#             # If not a valid WAV file, we should handle this but for now we'll continue
-#             # since the frontend should be sending a valid WAV file
-        
-#         # Return the file path and name
-#         return jsonify({
-#             "success": True,
-#             "message": "Audio file saved successfully",
-#             "filename": filename,
-#             "filepath": filepath,
-#             "letter": letter
-#         })
-        
-#     except Exception as e:
-#         logger.exception(f"Error saving audio file: {str(e)}")
-#         return jsonify({"error": f"Failed to save audio file: {str(e)}"}), 500
-# if __name__ == '__main__':
-#     # Preload all models at startup
-#     preload_all_models()
-
-#     # Start the server
-#     port = int(os.environ.get("PORT", 5000))
-#     #logger.info(f"Starting server on port {port}")
-#     app.run(host='0.0.0.0', port=port, debug=False)  # Set debug=False in production

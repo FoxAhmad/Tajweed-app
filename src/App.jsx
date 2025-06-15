@@ -34,6 +34,9 @@ const PHONEME_MODEL_MAPPING = {
   'aa': {
     'whisper': 'ahmad1703/whisper_aa',
     'wave2vec': 'xxmoeedxx/wav2vec2_aa'
+  },
+  'n': {
+    'wave2vec': 'xxmoeedxx/wav2vec2_n'
   }
 };
 

@@ -1,7 +1,5 @@
-// File: src/services/AudioService.js (Updated)
-
 /**
- * Service for handling audio recording, segmentation and analysis
+ * Simplified Service for handling audio recording, segmentation and analysis
  */
 class AudioService {
   constructor(apiBaseUrl = 'http://localhost:5000') {
@@ -30,11 +28,9 @@ class AudioService {
         let errorMessage;
         
         try {
-          // Try to parse as JSON
           const errorData = JSON.parse(errorText);
           errorMessage = errorData.error || 'Failed to save audio';
         } catch {
-          // If not JSON, use the raw text
           errorMessage = errorText || 'Failed to save audio';
         }
         
@@ -60,23 +56,21 @@ class AudioService {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.wav');
       formData.append('letter', letter);
-      formData.append('model', model);  // Include the model parameter
+      formData.append('model', model);
 
       const response = await fetch(`${this.apiBaseUrl}/segment-audio`, {
         method: 'POST',
         body: formData,
       });
-
+      
       if (!response.ok) {
         const errorText = await response.text();
         let errorMessage;
         
         try {
-          // Try to parse as JSON
           const errorData = JSON.parse(errorText);
           errorMessage = errorData.error || 'Failed to segment audio';
         } catch {
-          // If not JSON, use the raw text
           errorMessage = errorText || 'Failed to segment audio';
         }
         
@@ -97,7 +91,7 @@ class AudioService {
   }
 
   /**
-   * Analyzes a segmented phoneme
+   * Analyzes a single segmented phoneme
    * @param {string} segmentId - The ID of the segment to analyze
    * @param {string} phoneme - The phoneme to analyze
    * @param {string} model - The model to use (whisper or wave2vec)
@@ -105,6 +99,8 @@ class AudioService {
    */
   async analyzeSegment(segmentId, phoneme, model = 'whisper') {
     try {
+      console.log(`Analyzing segment: ${segmentId} with model: ${model}`);
+      
       const formData = new FormData();
       formData.append('segment_id', segmentId);
       formData.append('phoneme', phoneme);
@@ -120,11 +116,9 @@ class AudioService {
         let errorMessage;
         
         try {
-          // Try to parse as JSON
           const errorData = JSON.parse(errorText);
           errorMessage = errorData.error || 'Failed to analyze segment';
         } catch {
-          // If not JSON, use the raw text
           errorMessage = errorText || 'Failed to analyze segment';
         }
         
@@ -139,14 +133,67 @@ class AudioService {
   }
 
   /**
-   * Analyze all phonemes in a segmented recording
-   * @param {Array} segments - Array of segment objects from segmentAudio
+   * Analyze all phonemes in a segmented recording using the simplified endpoint
+   * @param {Array} segments - Array of segment objects from segmentAudio (optional, not used in new approach)
    * @param {string} model - The model to use (whisper or wave2vec)
    * @returns {Promise<Object>} - Results for each phoneme
    */
   async analyzeAllSegments(segments, model = 'whisper') {
     try {
+      console.log('Starting analysis of all segments with simplified approach');
+      console.log('Segments provided:', segments);
+      console.log('Model:', model);
+      
+      // Use the new simplified endpoint that automatically finds and analyzes all segments
+      const formData = new FormData();
+      formData.append('model', model);
+
+      const response = await fetch(`${this.apiBaseUrl}/analyze-all-segments`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage;
+        
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || 'Failed to analyze segments';
+        } catch {
+          errorMessage = errorText || 'Failed to analyze segments';
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Analysis failed');
+      }
+      
+      console.log('Analysis completed successfully:', data);
+      
+      // Return the results in the expected format
+      return data.results;
+      
+    } catch (error) {
+      console.error('Error analyzing all segments:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Legacy method: Analyze all segments individually (kept for backward compatibility)
+   * @param {Array} segments - Array of segment objects from segmentAudio
+   * @param {string} model - The model to use (whisper or wave2vec)
+   * @returns {Promise<Object>} - Results for each phoneme
+   */
+  async analyzeAllSegmentsIndividually(segments, model = 'whisper') {
+    try {
       const results = {};
+      console.log('Analyzing segments individually:', segments);
       
       // Analyze each segment sequentially
       for (const segment of segments) {
@@ -158,15 +205,16 @@ class AudioService {
           );
           
           results[segment.phoneme] = result;
+          console.log(`✓ Analyzed segment ${segment.phoneme}:`, result);
         } catch (error) {
-          console.error(`Error analyzing segment ${segment.phoneme}:`, error);
+          console.error(`✗ Error analyzing segment ${segment.phoneme}:`, error);
           results[segment.phoneme] = { error: error.message };
         }
       }
       
       return results;
     } catch (error) {
-      console.error('Error analyzing segments:', error);
+      console.error('Error analyzing segments individually:', error);
       throw error;
     }
   }
@@ -203,6 +251,41 @@ class AudioService {
     }
     
     return null;
+  }
+
+  /**
+   * Get detailed analysis summary
+   * @param {Object} results - Results object from analyzeAllSegments
+   * @returns {Object} - Analysis summary
+   */
+  getAnalysisSummary(results) {
+    const phonemes = Object.keys(results);
+    let correctCount = 0;
+    let totalAnalyzed = 0;
+    let errors = [];
+    
+    for (const phoneme of phonemes) {
+      const result = results[phoneme];
+      
+      if (result && !result.error) {
+        totalAnalyzed++;
+        if (result.correct) {
+          correctCount++;
+        }
+      } else if (result && result.error) {
+        errors.push({ phoneme, error: result.error });
+      }
+    }
+    
+    return {
+      totalPhonemes: phonemes.length,
+      analyzedPhonemes: totalAnalyzed,
+      correctPhonemes: correctCount,
+      incorrectPhonemes: totalAnalyzed - correctCount,
+      errors: errors,
+      accuracy: totalAnalyzed > 0 ? Math.round((correctCount / totalAnalyzed) * 100) : 0,
+      overallScore: this.calculateOverallScore(results)
+    };
   }
 }
 
