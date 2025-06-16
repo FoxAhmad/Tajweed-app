@@ -533,10 +533,10 @@ def predict_audio(model, processor, audio_data, sample_rate, model_name, phoneme
         # Different length requirements for segments vs full recordings
         if is_segment:
             max_length = 5.0  # Allow up to 5 seconds for segments
-            min_length = 0.005  # Allow segments as short as 5 milliseconds
+            min_length = 0.004  # Allow segments as short as 5 milliseconds
         else:
             max_length = MAX_AUDIO_LENGTH  # 30 seconds for full recordings
-            min_length = 0.1  # 0.1 seconds for full recordings
+            min_length = 0.004  # 0.1 seconds for full recordings
         
         if audio_length > max_length:
             return {
