@@ -40,16 +40,7 @@ export const ResultDisplay = ({ result }) => {
       </div>
       
       <div className="result-details">
-        <div className="confidence-meter">
-          <div className="confidence-label">Confidence:</div>
-          <div className="confidence-bar-container">
-            <div 
-              className="confidence-bar" 
-              style={{ width: `${confidence}%` }}
-            ></div>
-          </div>
-          <div className="confidence-value">{confidence}%</div>
-        </div>
+        
         
         <div className="recommendation">
           <h4>Feedback:</h4>

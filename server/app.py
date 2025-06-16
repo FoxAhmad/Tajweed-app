@@ -107,8 +107,14 @@ PHONEME_MODEL_MAPPING = {
         'cnn': 'aa_cnn_spectrogram_model.pth'
     },
     'n': {
+        'whisper': 'ahmad1703/whisper_n',
         'wave2vec': 'xxmoeedxx/wav2vec2_n',
         'cnn': 'n_cnn_spectrogram_model.pth'
+    },
+    'd': {
+        'whisper': 'ahmad1703/whisper_d',
+        'wave2vec': 'xxmoeedxx/wav2vec2_d',
+        'cnn': 'd_cnn_spectrogram_model.pth'
     }
 }
 
