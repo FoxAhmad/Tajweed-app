@@ -510,7 +510,7 @@ const checkPronunciation = async () => {
       
       // Calculate overall score
       if (analyzedPhonemes > 0) {
-        setOverallScore(Math.round(totalScore / analyzedPhonemes));
+        setOverallScore(Math.round(totalScore / analyzedPhonemes * 100));
       }
     }
   } catch (error) {

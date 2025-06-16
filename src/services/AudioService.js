@@ -604,7 +604,7 @@ class AudioService {
       
       if (result && !result.error && typeof result.confidence === 'number') {
         // Calculate score (0-100)
-        const score = result.correct ? result.confidence : (100 - result.confidence);
+        const score = result.correct ? 1 : 0;
         totalScore += score;
         analyzedPhonemes++;
       }
@@ -612,7 +612,7 @@ class AudioService {
     
     // Calculate overall score
     if (analyzedPhonemes > 0) {
-      return Math.round(totalScore / analyzedPhonemes);
+      return Math.round(totalScore / analyzedPhonemes *100);
     }
     
     return null;
